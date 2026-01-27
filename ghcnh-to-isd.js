@@ -549,6 +549,10 @@ function buildAdditionalDataSection(record) {
     // Format: GD1 + coverage(1) + cov_qc(1) + base_qc(1) + char(1) + height(6,signed) + height_qc(1) + qc(1)
     // Only output GD sections when sky_cover_1 has coverage (METAR records)
     const firstHasCover = skyCoverFields[0].cover && skyCoverFields[0].cover !== '';
+    let highestCoverage = 0;
+    let highestHeight = 0;
+    let gdCount = 0;
+
     if (firstHasCover) {
         skyCoverFields.forEach((field, idx) => {
             const hasCover = field.cover && field.cover !== '';
@@ -557,17 +561,90 @@ function buildAdditionalDataSection(record) {
                 const gdCode = 'GD' + (idx + 1);
                 const coverAmount = hasCover ? mapSkyCoverAmount(field.cover) : '9';
                 let heightStr = '+99999';
+                let heightVal = 0;
                 if (hasHeight) {
                     let h = field.height.replace(/^\+/, '');
                     h = parseInt(h, 10);
                     if (!isNaN(h)) {
+                        heightVal = h;
                         const sign = h >= 0 ? '+' : '-';
                         heightStr = sign + String(Math.abs(h)).padStart(5, '0');
                     }
                 }
                 addSection += gdCode + coverAmount + '991' + heightStr + '59';
+                gdCount++;
+
+                // Track highest coverage and height for GD4 calculation
+                if (hasCover) {
+                    const coverNum = parseInt(coverAmount, 10);
+                    if (!isNaN(coverNum) && coverNum < 9) {
+                        if (coverNum > highestCoverage) {
+                            highestCoverage = coverNum;
+                        }
+                    }
+                }
+                if (heightVal > highestHeight) {
+                    highestHeight = heightVal;
+                }
             }
         });
+
+        // GD4 - Add 4th summation layer when highest coverage is not overcast (4)
+        // This represents inferred total sky cover at a standard altitude above observed layers
+        // Only add GD4 for 3-layer cases here; 2-layer cases are handled below
+        // Don't add GD4 if highest layer is already at or above 7500m (no room for higher layer)
+        if (gdCount === 3 && highestCoverage > 0 && highestCoverage < 4 && highestHeight < 7500) {
+            // GD4 coverage is typically one step higher than highest observed (capped at 4)
+            const gd4Coverage = Math.min(highestCoverage + 1, 4);
+
+            // GD4 height is next standard altitude above highest observed layer
+            // Standard altitudes (meters): 4267, 4572, 5486, 6096, 6401, 6706, 7010, 7315, 7620
+            const standardAltitudes = [4267, 4572, 5486, 6096, 6401, 6706, 7010, 7315, 7620];
+            let gd4Height = 7620; // Default to highest
+            for (const alt of standardAltitudes) {
+                if (alt > highestHeight) {
+                    gd4Height = alt;
+                    break;
+                }
+            }
+
+            const gd4HeightStr = '+' + String(gd4Height).padStart(5, '0');
+            // Use '19' ending: '1' = estimated height quality, '9' = overall quality
+            addSection += 'GD4' + gd4Coverage + '991' + gd4HeightStr + '19';
+        }
+    }
+
+    // Also check for 2-layer cases (only GD1 and GD2) that need GD3 and GD4
+    // When we have fewer than 3 layers but highest coverage is not OVC, add additional GD records
+    if (firstHasCover && gdCount === 2 && highestCoverage > 0 && highestCoverage < 4) {
+        // Add GD3 at an intermediate standard altitude
+        const standardAltitudes = [4267, 4572, 5486, 6096, 6401, 6706, 7010, 7315, 7620];
+        let gd3Height = 4267;
+        let gd4Height = 7620;
+
+        // Find two altitudes above highest observed
+        let foundFirst = false;
+        for (const alt of standardAltitudes) {
+            if (alt > highestHeight) {
+                if (!foundFirst) {
+                    gd3Height = alt;
+                    foundFirst = true;
+                } else {
+                    gd4Height = alt;
+                    break;
+                }
+            }
+        }
+
+        // GD3 coverage = highest + 1 (capped at 4)
+        const gd3Coverage = Math.min(highestCoverage + 1, 4);
+        const gd3HeightStr = '+' + String(gd3Height).padStart(5, '0');
+        addSection += 'GD3' + gd3Coverage + '991' + gd3HeightStr + '19';
+
+        // GD4 coverage = highest + 2 (capped at 4)
+        const gd4Coverage = Math.min(highestCoverage + 2, 4);
+        const gd4HeightStr = '+' + String(gd4Height).padStart(5, '0');
+        addSection += 'GD4' + gd4Coverage + '991' + gd4HeightStr + '19';
     }
 
     // GE1 - Sky condition observation
