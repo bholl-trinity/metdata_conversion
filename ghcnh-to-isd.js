@@ -38,42 +38,51 @@ function parseGHCNh(text) {
 
 /**
  * Convert a single GHCNh record to ISD format
+ * @param {Object} record - The GHCNh record to convert
+ * @param {Object} stationMap - Optional map of Station_ID to {usaf, wban}
  */
-function convertRecordToISD(record) {
+function convertRecordToISD(record, stationMap) {
     // Extract station IDs from the source
     let usafId = '999999';
     let wbanId = '99999';
 
-    // Try to extract from temperature_Source_Station_ID (e.g., "722590-03927")
-    const sourceStationId = record.temperature_Source_Station_ID || '';
-    if (sourceStationId.includes('-') && !sourceStationId.includes('ICAO')) {
-        const parts = sourceStationId.split('-');
-        usafId = parts[0].padStart(6, '0').slice(0, 6);
-        wbanId = parts[1].padStart(5, '0').slice(0, 5);
-    } else if (record.Station_ID) {
-        // For SYNOP records, we need to look up the station ID
-        // Default mapping for USW stations - WBAN is embedded in the ID
-        const stationId = record.Station_ID;
-        if (stationId.startsWith('USW')) {
-            // USW00003927 -> WBAN is 03927
-            wbanId = stationId.slice(6, 11);
-            // USAF ID needs to be looked up or derived
-            // For DFW: 722590
-            // Check if we can find it in another record's source station ID
+    // First, check if we have a pre-built mapping for this station
+    const ghcnhId = record.Station_ID;
+    if (stationMap && stationMap[ghcnhId]) {
+        usafId = stationMap[ghcnhId].usaf;
+        wbanId = stationMap[ghcnhId].wban;
+    } else {
+        // Try to extract from current record's source station IDs
+        const stationIdFields = [
+            'temperature_Source_Station_ID',
+            'wind_direction_Source_Station_ID',
+            'wind_speed_Source_Station_ID',
+            'sea_level_pressure_Source_Station_ID',
+            'station_level_pressure_Source_Station_ID',
+            'visibility_Source_Station_ID',
+            'dew_point_temperature_Source_Station_ID',
+            'altimeter_Source_Station_ID',
+            'sky_cover_1_Source_Station_ID'
+        ];
+
+        for (const field of stationIdFields) {
+            const sourceStationId = record[field] || '';
+            if (sourceStationId.includes('-') && !sourceStationId.includes('ICAO')) {
+                const parts = sourceStationId.split('-');
+                if (parts.length === 2 && parts[0].length >= 5 && parts[1].length >= 4) {
+                    usafId = parts[0].padStart(6, '0').slice(0, 6);
+                    wbanId = parts[1].padStart(5, '0').slice(0, 5);
+                    break;
+                }
+            }
         }
-    }
 
-    // If we still don't have a proper USAF ID, try to find it from the source code
-    if (usafId === '999999') {
-        const sourceCode = record.temperature_Source_Code || '';
-        // Source code 343 typically indicates METAR data with USAF/WBAN IDs available
-        // Source code 223 is SYNOP data which might not have direct USAF ID
-
-        // For testing purposes with DFW data, hardcode the known mapping
-        // In production, this would be looked up from a station metadata file
-        if (record.Station_ID === 'USW00003927') {
-            usafId = '722590';
-            wbanId = '03927';
+        // If still not found, extract WBAN from GHCNh Station_ID (USWnnnnnnnn format)
+        if (usafId === '999999' && ghcnhId) {
+            if (ghcnhId.startsWith('USW') && ghcnhId.length >= 11) {
+                // USW00014771 -> WBAN is 14771
+                wbanId = ghcnhId.slice(6, 11);
+            }
         }
     }
 
@@ -668,6 +677,48 @@ function mapPressureTendency(measurementCode) {
 }
 
 /**
+ * Build station ID mapping from records
+ * Scans all records to find USAF-WBAN mappings for each Station_ID
+ */
+function buildStationIdMap(records) {
+    const stationMap = {};
+
+    const stationIdFields = [
+        'temperature_Source_Station_ID',
+        'wind_direction_Source_Station_ID',
+        'wind_speed_Source_Station_ID',
+        'sea_level_pressure_Source_Station_ID',
+        'station_level_pressure_Source_Station_ID',
+        'visibility_Source_Station_ID',
+        'dew_point_temperature_Source_Station_ID',
+        'altimeter_Source_Station_ID',
+        'sky_cover_1_Source_Station_ID'
+    ];
+
+    for (const record of records) {
+        const ghcnhId = record.Station_ID;
+        if (!ghcnhId || stationMap[ghcnhId]) continue;
+
+        // Try each field to find a valid station ID
+        for (const field of stationIdFields) {
+            const sourceStationId = record[field] || '';
+            if (sourceStationId.includes('-') && !sourceStationId.includes('ICAO')) {
+                const parts = sourceStationId.split('-');
+                if (parts.length === 2 && parts[0].length >= 5 && parts[1].length >= 4) {
+                    stationMap[ghcnhId] = {
+                        usaf: parts[0].padStart(6, '0').slice(0, 6),
+                        wban: parts[1].padStart(5, '0').slice(0, 5)
+                    };
+                    break;
+                }
+            }
+        }
+    }
+
+    return stationMap;
+}
+
+/**
  * Convert all records and return ISD output
  */
 function convertGHCNhToISD(ghcnhText, progressCallback) {
@@ -676,9 +727,12 @@ function convertGHCNhToISD(ghcnhText, progressCallback) {
     let converted = 0;
     let skipped = 0;
 
+    // Build station ID mapping first by scanning all records
+    const stationMap = buildStationIdMap(data.records);
+
     for (let i = 0; i < data.records.length; i++) {
         try {
-            const isdLine = convertRecordToISD(data.records[i]);
+            const isdLine = convertRecordToISD(data.records[i], stationMap);
             if (isdLine) {
                 outputLines.push(isdLine);
                 converted++;
