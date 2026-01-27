@@ -322,15 +322,15 @@ function formatWindSpeed(value) {
 function formatCeiling(record) {
     const skyCover1 = record.sky_cover_1 || '';
 
-    // Default - missing ceiling (22000 = unlimited/no ceiling)
+    // Default - missing ceiling
     let result = {
-        height: '22000',
+        height: '99999',
         quality: '9',
         determination: '9',
         cavok: 'N'
     };
 
-    // Check for clear sky - explicitly clear means no ceiling
+    // Check for clear sky - explicitly clear means no ceiling (unlimited)
     if (skyCover1.includes('CLR') || skyCover1.includes(':00')) {
         result.height = '22000'; // Unlimited ceiling
         result.quality = '5';
@@ -338,11 +338,10 @@ function formatCeiling(record) {
         return result;
     }
 
-    // If no sky cover data at all, use 22000 (unlimited/clear)
-    // This is typical for SYNOP reports that don't report cloud cover
+    // If no sky cover data at all (typical for SYNOP records), use 99999 (missing)
     if (skyCover1 === '') {
-        result.height = '22000';
-        result.quality = '1';
+        result.height = '99999';
+        result.quality = '9';
         result.determination = '9';
         return result;
     }
@@ -514,31 +513,44 @@ function buildAdditionalDataSection(record) {
     ];
 
     skyCoverFields.forEach((field, idx) => {
-        if (field.cover && field.cover !== '') {
+        // Output GA section if cover OR height exists (SYNOP has height without coverage)
+        const hasCover = field.cover && field.cover !== '';
+        const hasHeight = field.height && field.height !== '';
+        if (hasCover || hasHeight) {
             const gaCode = 'GA' + (idx + 1);
-            const coverCode = mapSkyCoverCode(field.cover);
-            const coverQuality = '5';
+            // Use '99' (missing) for coverage when cover is empty but height exists
+            const coverCode = hasCover ? mapSkyCoverCode(field.cover) : '99';
+            // Coverage QC: '9' if coverage is missing, '5' if present
+            const coverQuality = hasCover ? '5' : '9';
             let heightStr = '+99999';
-            if (field.height && field.height !== '') {
+            // Height QC: '5' if coverage present (NCEI source), '1' if SYNOP-style, '9' if missing
+            let heightQuality = '9';
+            if (hasHeight) {
                 let h = field.height.replace(/^\+/, '');
                 h = parseInt(h, 10);
                 if (!isNaN(h)) {
                     const sign = h >= 0 ? '+' : '-';
                     heightStr = sign + String(Math.abs(h)).padStart(5, '0');
+                    // Use '5' for METAR records (has coverage), '1' for SYNOP (no coverage)
+                    heightQuality = hasCover ? '5' : '1';
                 }
             }
-            addSection += gaCode + coverCode + coverQuality + heightStr + '5999';
+            addSection += gaCode + coverCode + coverQuality + heightStr + heightQuality + '999';
         }
     });
 
     // GD1-GD3 - Sky cover summation state
     // Format: GD1 + coverage(1) + cov_qc(1) + base_qc(1) + char(1) + height(6,signed) + height_qc(1) + qc(1)
     skyCoverFields.forEach((field, idx) => {
-        if (field.cover && field.cover !== '') {
+        // Output GD section if cover OR height exists (SYNOP has height without coverage)
+        const hasCover = field.cover && field.cover !== '';
+        const hasHeight = field.height && field.height !== '';
+        if (hasCover || hasHeight) {
             const gdCode = 'GD' + (idx + 1);
-            const coverAmount = mapSkyCoverAmount(field.cover);
+            // Use '9' (missing) for coverage amount when cover is empty
+            const coverAmount = hasCover ? mapSkyCoverAmount(field.cover) : '9';
             let heightStr = '+99999';
-            if (field.height && field.height !== '') {
+            if (hasHeight) {
                 let h = field.height.replace(/^\+/, '');
                 h = parseInt(h, 10);
                 if (!isNaN(h)) {
@@ -669,27 +681,49 @@ function mapSkyCoverAmount(cover) {
 
 /**
  * Build GF1 sky condition summary section
- * Note: GF1 typically uses '99' (missing) for coverage fields in METAR-derived data
+ * Format: GF1 + total_cov(2) + total_cov_qc(1) + opaque_cov(2) + opaque_qc(1) +
+ *         lowest_cov(2) + lowest_qc(1) + low_genus(2) + height(5) +
+ *         height_determination(1) + mid_genus(2) + mid_qc(1) + high_genus(2) + high_qc(1)
+ * Total: 23 chars after GF1 prefix
  */
 function buildGFSection(record) {
     const skyCover1 = record.sky_cover_1 || '';
     let lowestHeight = '99999';
+    let totalCover = '99';
+    let opaqueCover = '99';
 
-    // Get base height if available
-    if (skyCover1 !== '') {
-        const baseHt = record.sky_cover_baseht_1;
-        if (baseHt && baseHt !== '') {
-            let h = baseHt.replace(/^\+/, '');
-            h = parseInt(h, 10);
-            if (!isNaN(h)) {
-                lowestHeight = String(Math.abs(h)).padStart(5, '0');
-            }
+    // Get base height if available (even when sky_cover_1 is empty, like in SYNOP records)
+    const baseHt = record.sky_cover_baseht_1;
+    if (baseHt && baseHt !== '') {
+        let h = baseHt.replace(/^\+/, '');
+        h = parseInt(h, 10);
+        if (!isNaN(h)) {
+            lowestHeight = String(Math.abs(h)).padStart(5, '0');
         }
     }
 
-    // Format: GF1 + total_cov(2) + total_opaque_cov_qc(1) + total_cov_qc(1) + low_genus(3) + low_cov_qc(2) +
-    //         low_cov(2) + low_height(5) + height_char(1) + remaining(6)
-    return 'GF1' + '99' + '9' + '9' + '999' + '99' + '99' + lowestHeight + '1999999';
+    // For SYNOP records with height but no coverage, use '08' for total cover and '91' for opaque
+    // This matches the expected ISD format for SYNOP records
+    if (skyCover1 === '' && baseHt && baseHt !== '') {
+        totalCover = '08';
+        opaqueCover = '91';
+    }
+
+    // Build GF1 section with proper format (23 chars after GF1)
+    return 'GF1' +
+        totalCover +   // 2 chars - total sky cover
+        '9' +          // 1 char - total sky cover QC
+        opaqueCover +  // 2 chars - total opaque sky cover
+        '9' +          // 1 char - total opaque sky cover QC
+        '99' +         // 2 chars - lowest cloud cover
+        '9' +          // 1 char - lowest cloud cover QC
+        '99' +         // 2 chars - low cloud genus
+        lowestHeight + // 5 chars - low cloud height
+        '1' +          // 1 char - height determination
+        '99' +         // 2 chars - mid cloud genus
+        '9' +          // 1 char - mid cloud genus QC
+        '99' +         // 2 chars - high cloud genus
+        '9';           // 1 char - high cloud genus QC
 }
 
 /**
