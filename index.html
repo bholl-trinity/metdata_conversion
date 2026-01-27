@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GHCNh to ISD Converter</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .description {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3498db;
+        }
+
+        .drop-zone {
+            border: 3px dashed #3498db;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            background: #e8f4fc;
+            border-color: #2980b9;
+        }
+
+        .drop-zone.has-file {
+            border-color: #27ae60;
+            background: #e8f8f0;
+        }
+
+        .drop-zone input[type="file"] {
+            display: none;
+        }
+
+        .drop-zone-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .file-info {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .file-info.visible {
+            display: block;
+        }
+
+        .file-info h3 {
+            margin-top: 0;
+            color: #27ae60;
+        }
+
+        .file-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .file-detail {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .file-detail label {
+            font-weight: bold;
+            color: #666;
+            font-size: 0.85em;
+        }
+
+        .file-detail span {
+            display: block;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .progress-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .progress-container.visible {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            border-radius: 15px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: #666;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #2980b9;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #229954;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #7f8c8d;
+        }
+
+        .preview-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .preview-container.visible {
+            display: block;
+        }
+
+        .preview-container h3 {
+            margin-top: 0;
+        }
+
+        .preview-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .preview-tab {
+            padding: 8px 16px;
+            background: #e0e0e0;
+            border: none;
+            border-radius: 5px 5px 0 0;
+            cursor: pointer;
+        }
+
+        .preview-tab.active {
+            background: #3498db;
+            color: white;
+        }
+
+        .preview-content {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            white-space: pre;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .stats-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .stats-container.visible {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .error-message {
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .error-message.visible {
+            display: block;
+        }
+
+        .mapping-info {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .mapping-info h3 {
+            margin-top: 0;
+            cursor: pointer;
+        }
+
+        .mapping-info h3::before {
+            content: '+ ';
+        }
+
+        .mapping-info.expanded h3::before {
+            content: '- ';
+        }
+
+        .mapping-details {
+            display: none;
+            margin-top: 15px;
+        }
+
+        .mapping-info.expanded .mapping-details {
+            display: block;
+        }
+
+        .mapping-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .mapping-table th, .mapping-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .mapping-table th {
+            background: #3498db;
+            color: white;
+        }
+
+        .mapping-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <h1>GHCNh to ISD Format Converter</h1>
+
+    <div class="description">
+        <p><strong>Convert Global Historical Climatology Network hourly (GHCNh) files to Integrated Surface Data (ISD) format.</strong></p>
+        <p>Upload a GHCNh <code>.psv</code> file (pipe-separated values) and download the converted ISD fixed-width format file.</p>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <div class="drop-zone-icon">📁</div>
+        <p><strong>Drag & drop your GHCNh file here</strong></p>
+        <p>or click to browse</p>
+        <p style="font-size: 0.9em; color: #666;">Accepts .psv files up to 100 MB</p>
+        <input type="file" id="fileInput" accept=".psv,.txt,.csv">
+    </div>
+
+    <div class="file-info" id="fileInfo">
+        <h3>File Loaded</h3>
+        <div class="file-details">
+            <div class="file-detail">
+                <label>Filename</label>
+                <span id="fileName">-</span>
+            </div>
+            <div class="file-detail">
+                <label>File Size</label>
+                <span id="fileSize">-</span>
+            </div>
+            <div class="file-detail">
+                <label>Station ID</label>
+                <span id="stationId">-</span>
+            </div>
+            <div class="file-detail">
+                <label>Station Name</label>
+                <span id="stationName">-</span>
+            </div>
+            <div class="file-detail">
+                <label>Records</label>
+                <span id="recordCount">-</span>
+            </div>
+            <div class="file-detail">
+                <label>Date Range</label>
+                <span id="dateRange">-</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="progress-container" id="progressContainer">
+        <h3>Converting...</h3>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">Processing records...</div>
+    </div>
+
+    <div class="buttons">
+        <button class="btn-primary" id="convertBtn" disabled>Convert to ISD</button>
+        <button class="btn-success" id="downloadBtn" disabled>Download ISD File</button>
+        <button class="btn-secondary" id="resetBtn">Reset</button>
+    </div>
+
+    <div class="error-message" id="errorMessage"></div>
+
+    <div class="stats-container" id="statsContainer">
+        <h3>Conversion Statistics</h3>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-value" id="statRecords">0</div>
+                <div class="stat-label">Records Converted</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="statSkipped">0</div>
+                <div class="stat-label">Records Skipped</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="statOutputSize">0</div>
+                <div class="stat-label">Output Size</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="statTime">0s</div>
+                <div class="stat-label">Processing Time</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="preview-container" id="previewContainer">
+        <h3>Preview</h3>
+        <div class="preview-tabs">
+            <button class="preview-tab active" data-tab="input">Input (GHCNh)</button>
+            <button class="preview-tab" data-tab="output">Output (ISD)</button>
+        </div>
+        <div class="preview-content" id="previewContent"></div>
+    </div>
+
+    <div class="mapping-info" id="mappingInfo">
+        <h3>Field Mapping Reference</h3>
+        <div class="mapping-details">
+            <table class="mapping-table">
+                <tr>
+                    <th>GHCNh Field</th>
+                    <th>ISD Position</th>
+                    <th>ISD Field</th>
+                    <th>Notes</th>
+                </tr>
+                <tr><td>Station_ID</td><td>5-15</td><td>USAF + WBAN ID</td><td>Extracted from source station ID</td></tr>
+                <tr><td>Year, Month, Day</td><td>16-23</td><td>Date (YYYYMMDD)</td><td>Direct mapping</td></tr>
+                <tr><td>Hour, Minute</td><td>24-27</td><td>Time (HHMM)</td><td>Direct mapping</td></tr>
+                <tr><td>Latitude</td><td>29-34</td><td>Latitude</td><td>Scaled x1000</td></tr>
+                <tr><td>Longitude</td><td>35-41</td><td>Longitude</td><td>Scaled x1000</td></tr>
+                <tr><td>temperature_Report_Type</td><td>42-46</td><td>Report Type</td><td>FM-12, FM-15, FM-16, etc.</td></tr>
+                <tr><td>Elevation</td><td>47-51</td><td>Elevation</td><td>In meters</td></tr>
+                <tr><td>wind_direction</td><td>61-63</td><td>Wind Direction</td><td>Degrees from true north</td></tr>
+                <tr><td>wind_speed</td><td>66-69</td><td>Wind Speed</td><td>Scaled x10 (m/s)</td></tr>
+                <tr><td>sky_cover_baseht_1</td><td>71-75</td><td>Ceiling Height</td><td>In meters</td></tr>
+                <tr><td>visibility</td><td>79-84</td><td>Visibility</td><td>In meters</td></tr>
+                <tr><td>temperature</td><td>88-92</td><td>Temperature</td><td>Scaled x10 (°C)</td></tr>
+                <tr><td>dew_point_temperature</td><td>94-98</td><td>Dew Point</td><td>Scaled x10 (°C)</td></tr>
+                <tr><td>sea_level_pressure</td><td>100-104</td><td>Sea Level Pressure</td><td>Scaled x10 (hPa)</td></tr>
+            </table>
+            <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
+                Additional data sections (precipitation, sky cover layers, remarks, etc.) are also converted when available in the source data.
+            </p>
+        </div>
+    </div>
+
+    <script src="ghcnh-to-isd.js"></script>
+    <script src="converter.js"></script>
+</body>
+</html>
