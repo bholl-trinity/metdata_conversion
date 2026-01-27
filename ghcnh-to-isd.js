@@ -919,5 +919,6 @@ function convertGHCNhToISD(ghcnhText, progressCallback) {
 exports.parseGHCNh = parseGHCNh;
 exports.convertRecordToISD = convertRecordToISD;
 exports.convertGHCNhToISD = convertGHCNhToISD;
+exports.fillMissingSkyCover = fillMissingSkyCover;
 
 })(typeof exports !== 'undefined' ? exports : (window.GHCNhToISD = {}));
