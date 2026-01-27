@@ -742,10 +742,11 @@ function buildGFSection(record) {
     }
     // For SYNOP records, extract total cloud cover from remarks
     // SYNOP format: SYN[id] [iRixhVV] [Nddff] where N is total cloud (0-9 oktas)
+    // Note: dd and ff can be // when missing (e.g., 6//04 means N=6, wind dir missing)
     else {
         const remarks = record.remarks || '';
-        // Match pattern: SYN followed by digits, then space, then 5 digits, then space, then Nddff
-        const synopMatch = remarks.match(/SYN\d+\s+\d{5}\s+(\d)\d{4}/);
+        // Match pattern: SYN followed by digits, then space, then 5 chars, then space, then N followed by 4 chars (digits or /)
+        const synopMatch = remarks.match(/SYN\d+\s+\d{5}\s+(\d)[\d\/]{4}/);
         if (synopMatch) {
             const cloudOktas = parseInt(synopMatch[1], 10);
             if (!isNaN(cloudOktas) && cloudOktas >= 0 && cloudOktas <= 9) {
