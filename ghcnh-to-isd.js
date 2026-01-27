@@ -126,13 +126,17 @@ function convertRecordToISD(record, stationMap) {
         const icaoMatch = remarks.match(/(?:METAR|SPECI)\s+([A-Z]{4})/);
         if (icaoMatch) {
             callLetters = icaoMatch[1] + ' ';
-        } else if (sourceStationId.includes('ICAO-')) {
-            callLetters = sourceStationId.replace('ICAO-', '').slice(0, 4) + ' ';
         } else {
-            // Try to find KDFW or similar in remarks
-            const callMatch = remarks.match(/\b([A-Z]{4})\b/);
-            if (callMatch && callMatch[1].startsWith('K')) {
-                callLetters = callMatch[1] + ' ';
+            // Check source station ID fields for ICAO identifier
+            const skySourceId = record.sky_cover_1_Source_Station_ID || '';
+            if (skySourceId.includes('ICAO-')) {
+                callLetters = skySourceId.replace('ICAO-', '').slice(0, 4) + ' ';
+            } else {
+                // Try to find KDFW or similar in remarks
+                const callMatch = remarks.match(/\b([A-Z]{4})\b/);
+                if (callMatch && callMatch[1].startsWith('K')) {
+                    callLetters = callMatch[1] + ' ';
+                }
             }
         }
     }
@@ -725,6 +729,109 @@ function mapPresentWeatherAU(weatherStr) {
 }
 
 /**
+ * Check if a record has valid sky_cover data
+ * Returns true if sky_cover_1 has a non-empty value
+ */
+function hasValidSkyCover(record) {
+    const skyCover1 = record.sky_cover_1 || '';
+    return skyCover1 !== '';
+}
+
+/**
+ * Get record timestamp in minutes since epoch (simplified for comparison)
+ * Returns minutes from year/month/day/hour/minute fields
+ */
+function getRecordTimestamp(record) {
+    const year = parseInt(record.Year, 10) || 0;
+    const month = parseInt(record.Month, 10) || 1;
+    const day = parseInt(record.Day, 10) || 1;
+    const hour = parseInt(record.Hour, 10) || 0;
+    const minute = parseInt(record.Minute, 10) || 0;
+
+    // Convert to minutes since a reference point
+    // Using a simplified calculation: days * 1440 + hours * 60 + minutes
+    // Days calculation: approximate, good enough for 45-minute comparison
+    const days = (year * 365) + (month * 30) + day;
+    return days * 1440 + hour * 60 + minute;
+}
+
+/**
+ * Copy sky_cover fields from source record to target record
+ */
+function copySkyCoverFields(target, source) {
+    const skyCoverFields = [
+        'sky_cover_1', 'sky_cover_1_Measurement_Code', 'sky_cover_1_Quality_Code',
+        'sky_cover_1_Report_Type', 'sky_cover_1_Source_Code', 'sky_cover_1_Source_Station_ID',
+        'sky_cover_baseht_1', 'sky_cover_baseht_1_Measurement_Code', 'sky_cover_baseht_1_Quality_Code',
+        'sky_cover_baseht_1_Report_Type', 'sky_cover_baseht_1_Source_Code', 'sky_cover_baseht_1_Source_Station_ID',
+        'sky_cover_2', 'sky_cover_2_Measurement_Code', 'sky_cover_2_Quality_Code',
+        'sky_cover_2_Report_Type', 'sky_cover_2_Source_Code', 'sky_cover_2_Source_Station_ID',
+        'sky_cover_baseht_2', 'sky_cover_baseht_2_Measurement_Code', 'sky_cover_baseht_2_Quality_Code',
+        'sky_cover_baseht_2_Report_Type', 'sky_cover_baseht_2_Source_Code', 'sky_cover_baseht_2_Source_Station_ID',
+        'sky_cover_3', 'sky_cover_3_Measurement_Code', 'sky_cover_3_Quality_Code',
+        'sky_cover_3_Report_Type', 'sky_cover_3_Source_Code', 'sky_cover_3_Source_Station_ID',
+        'sky_cover_baseht_3', 'sky_cover_baseht_3_Measurement_Code', 'sky_cover_baseht_3_Quality_Code',
+        'sky_cover_baseht_3_Report_Type', 'sky_cover_baseht_3_Source_Code', 'sky_cover_baseht_3_Source_Station_ID'
+    ];
+
+    for (const field of skyCoverFields) {
+        if (source[field] !== undefined && source[field] !== '') {
+            target[field] = source[field];
+        }
+    }
+}
+
+/**
+ * Fill in missing sky_cover data from previous records within 45 minutes
+ * For FM-12 SYNOP records that have blank sky_cover, look back at previous
+ * observations to find valid sky_cover data
+ */
+function fillMissingSkyCover(records) {
+    const MAX_LOOKBACK_MINUTES = 45;
+
+    for (let i = 0; i < records.length; i++) {
+        const record = records[i];
+
+        // Skip if this record already has valid sky_cover
+        if (hasValidSkyCover(record)) {
+            continue;
+        }
+
+        const currentTimestamp = getRecordTimestamp(record);
+        const currentStationId = record.Station_ID;
+
+        // Look backwards through previous records
+        for (let j = i - 1; j >= 0; j--) {
+            const prevRecord = records[j];
+
+            // Only consider records from the same station
+            if (prevRecord.Station_ID !== currentStationId) {
+                continue;
+            }
+
+            const prevTimestamp = getRecordTimestamp(prevRecord);
+            const timeDiff = currentTimestamp - prevTimestamp;
+
+            // Stop if we've gone back more than 45 minutes
+            if (timeDiff > MAX_LOOKBACK_MINUTES) {
+                break;
+            }
+
+            // Skip records with negative time difference (shouldn't happen if sorted)
+            if (timeDiff < 0) {
+                continue;
+            }
+
+            // Found a record within 45 minutes - check if it has valid sky_cover
+            if (hasValidSkyCover(prevRecord)) {
+                copySkyCoverFields(record, prevRecord);
+                break;
+            }
+        }
+    }
+}
+
+/**
  * Build station ID mapping from records
  * Scans all records to find USAF-WBAN mappings for each Station_ID
  */
@@ -777,6 +884,10 @@ function convertGHCNhToISD(ghcnhText, progressCallback) {
 
     // Build station ID mapping first by scanning all records
     const stationMap = buildStationIdMap(data.records);
+
+    // Fill in missing sky_cover data from previous records within 45 minutes
+    // This helps FM-12 SYNOP records which often have blank sky_cover fields
+    fillMissingSkyCover(data.records);
 
     for (let i = 0; i < data.records.length; i++) {
         try {
