@@ -160,7 +160,8 @@ function convertRecordToISD(record, stationMap) {
     const visQuality = mapQualityCode(record.visibility_Quality_Code);
     const visVariabilityCode = record.visibility_Measurement_Code;
     const visVariability = (visVariabilityCode && visVariabilityCode.includes('V-Variable')) ? 'V' : 'N';
-    const visVarQuality = '9';
+    // Use '5' for visibility variability quality when visibility is reported
+    const visVarQuality = (record.visibility && record.visibility !== '') ? '5' : '9';
 
     // Temperature
     const temp = formatTemperature(record.temperature);
@@ -463,20 +464,49 @@ function buildAdditionalDataSection(record) {
     let addSection = 'ADD';
 
     // AA1 - Liquid precipitation
+    // Format: AA1 + period(2) + depth(4) + condition(1) + quality(1)
     const precip = record.precipitation;
+    const precipMeasCode = record.precipitation_Measurement_Code || '';
     if (precip !== undefined && precip !== '') {
         const precipVal = parseFloat(precip);
         if (!isNaN(precipVal)) {
             // GHCNh precipitation is in mm, ISD AA1 scaled by 10
             const precipMm = Math.round(precipVal * 10);
             const precipStr = String(precipMm).padStart(4, '0');
-            const condCode = '9'; // Missing condition code
-            const qualCode = '5';
+            // Map condition code: 2=Trace, 1=measurement, 9=missing
+            let condCode = '9';
+            if (precipMeasCode.includes('Trace') || precipMeasCode.includes('2-')) {
+                condCode = '2'; // Trace amount
+            } else if (precipVal >= 0) {
+                condCode = '1'; // Measurement
+            }
+            const qualCode = '1';
             addSection += 'AA1' + '01' + precipStr + condCode + qualCode;
         }
     }
 
+    // AU1 - Present weather observation (automated) - must come before GA1
+    // Format: AU1 + intensity(1) + descriptor(1) + precipitation(2) + obscuration(1) + other(1) + combination(1) + quality(1)
+    const auWeather = record.pres_wx_AU1;
+    if (auWeather && auWeather !== '') {
+        const auCode = mapPresentWeatherAU(auWeather);
+        if (auCode) {
+            addSection += 'AU1' + auCode;
+        }
+    }
+
+    // AW1 - Present weather observation (automated WMO code) - must come before GA1
+    // Format: AW1 + code(2) + quality(1)
+    const awWeather = record.pres_wx_AW1;
+    if (awWeather && awWeather !== '') {
+        const awCode = extractWeatherCode(awWeather);
+        if (awCode) {
+            addSection += 'AW1' + awCode.padStart(2, '0') + '5';
+        }
+    }
+
     // GA1-GA3 - Sky cover layers
+    // Format: GA1 + coverage(2) + quality(1) + height(6,signed) + cloud_type(2) + type_quality(1)
     const skyCoverFields = [
         { cover: record.sky_cover_1, height: record.sky_cover_baseht_1 },
         { cover: record.sky_cover_2, height: record.sky_cover_baseht_2 },
@@ -487,6 +517,7 @@ function buildAdditionalDataSection(record) {
         if (field.cover && field.cover !== '') {
             const gaCode = 'GA' + (idx + 1);
             const coverCode = mapSkyCoverCode(field.cover);
+            const coverQuality = '5';
             let heightStr = '+99999';
             if (field.height && field.height !== '') {
                 let h = field.height.replace(/^\+/, '');
@@ -496,24 +527,26 @@ function buildAdditionalDataSection(record) {
                     heightStr = sign + String(Math.abs(h)).padStart(5, '0');
                 }
             }
-            addSection += gaCode + coverCode + heightStr + '5999';
+            addSection += gaCode + coverCode + coverQuality + heightStr + '5999';
         }
     });
 
     // GD1-GD3 - Sky cover summation state
+    // Format: GD1 + coverage(1) + cov_qc(1) + base_qc(1) + char(1) + height(6,signed) + height_qc(1) + qc(1)
     skyCoverFields.forEach((field, idx) => {
         if (field.cover && field.cover !== '') {
             const gdCode = 'GD' + (idx + 1);
             const coverAmount = mapSkyCoverAmount(field.cover);
-            let heightStr = '99999';
+            let heightStr = '+99999';
             if (field.height && field.height !== '') {
                 let h = field.height.replace(/^\+/, '');
                 h = parseInt(h, 10);
                 if (!isNaN(h)) {
-                    heightStr = String(Math.abs(h)).padStart(5, '0');
+                    const sign = h >= 0 ? '+' : '-';
+                    heightStr = sign + String(Math.abs(h)).padStart(5, '0');
                 }
             }
-            addSection += gdCode + coverAmount + '99' + '1' + heightStr + '59';
+            addSection += gdCode + coverAmount + '991' + heightStr + '59';
         }
     });
 
@@ -525,25 +558,30 @@ function buildAdditionalDataSection(record) {
     addSection += gfSection;
 
     // MA1 - Atmospheric pressure observation
+    // Format: MA1 + altimeter(5) + altimeter_qc(1) + station_pressure(5) + station_qc(1)
     const stationPressure = record.station_level_pressure;
     const altimeter = record.altimeter;
     if ((stationPressure && stationPressure !== '') || (altimeter && altimeter !== '')) {
         let altStr = '99999';
+        let altQc = '9';
         let stpStr = '99999';
+        let stpQc = '9';
 
         if (altimeter && altimeter !== '') {
             const alt = parseFloat(altimeter);
             if (!isNaN(alt)) {
                 altStr = String(Math.round(alt * 10)).padStart(5, '0');
+                altQc = '5';
             }
         }
         if (stationPressure && stationPressure !== '') {
             const stp = parseFloat(stationPressure);
             if (!isNaN(stp)) {
                 stpStr = String(Math.round(stp * 10)).padStart(5, '0');
+                stpQc = '5';
             }
         }
-        addSection += 'MA1' + altStr + stpStr;
+        addSection += 'MA1' + altStr + altQc + stpStr + stpQc;
     }
 
     // MD1 - Atmospheric pressure change
@@ -567,6 +605,16 @@ function buildAdditionalDataSection(record) {
             const gustScaled = Math.round(gust * 10);
             const gustStr = String(gustScaled).padStart(4, '0');
             addSection += 'OC1' + gustStr + '5';
+        }
+    }
+
+    // MW1 - Present weather observation (manual)
+    // Format: MW1 + code(2) + quality(1)
+    const mwWeather = record.pres_wx_MW1;
+    if (mwWeather && mwWeather !== '') {
+        const mwCode = extractWeatherCode(mwWeather);
+        if (mwCode) {
+            addSection += 'MW1' + mwCode.padStart(2, '0') + '5';
         }
     }
 
@@ -602,20 +650,18 @@ function mapSkyCoverCode(cover) {
 }
 
 /**
- * Map GHCNh sky cover to amount code
+ * Map GHCNh sky cover to GD summation state amount code
+ * Uses summation state coding (not oktas):
+ * 0=Clear, 1=Few, 2=Scattered, 3=Broken, 4=Overcast, 9=Missing
  */
 function mapSkyCoverAmount(cover) {
     if (!cover) return '9';
 
     if (cover.includes('CLR') || cover.includes(':00')) return '0';
-    if (cover.includes('FEW:01')) return '1';
-    if (cover.includes('FEW:02') || cover.includes('FEW')) return '2';
-    if (cover.includes('SCT:03')) return '3';
-    if (cover.includes('SCT:04') || cover.includes('SCT')) return '4';
-    if (cover.includes('BKN:05')) return '5';
-    if (cover.includes('BKN:06')) return '6';
-    if (cover.includes('BKN:07') || cover.includes('BKN')) return '7';
-    if (cover.includes('OVC:08') || cover.includes('OVC')) return '8';
+    if (cover.includes('FEW')) return '1';
+    if (cover.includes('SCT')) return '2';
+    if (cover.includes('BKN')) return '3';
+    if (cover.includes('OVC')) return '4';
     if (cover.includes('VV')) return '9';
 
     return '9';
@@ -623,25 +669,14 @@ function mapSkyCoverAmount(cover) {
 
 /**
  * Build GF1 sky condition summary section
+ * Note: GF1 typically uses '99' (missing) for coverage fields in METAR-derived data
  */
 function buildGFSection(record) {
     const skyCover1 = record.sky_cover_1 || '';
-    let totalCoverage = '99';
-    let lowestCover = '99';
     let lowestHeight = '99999';
-    let midCover = '999';
-    let highCover = '9999';
 
-    if (skyCover1.includes('CLR')) {
-        totalCoverage = '00';
-        lowestCover = '00';
-        return 'GF1' + totalCoverage + '0991' + midCover + '99' + lowestCover + lowestHeight + '1999999';
-    }
-
+    // Get base height if available
     if (skyCover1 !== '') {
-        totalCoverage = mapSkyCoverCode(skyCover1);
-        lowestCover = totalCoverage;
-
         const baseHt = record.sky_cover_baseht_1;
         if (baseHt && baseHt !== '') {
             let h = baseHt.replace(/^\+/, '');
@@ -652,7 +687,9 @@ function buildGFSection(record) {
         }
     }
 
-    return 'GF1' + totalCoverage + '99' + '9' + midCover + '99' + lowestCover + lowestHeight + '1999999';
+    // Format: GF1 + total_cov(2) + total_opaque_cov_qc(1) + total_cov_qc(1) + low_genus(3) + low_cov_qc(2) +
+    //         low_cov(2) + low_height(5) + height_char(1) + remaining(6)
+    return 'GF1' + '99' + '9' + '9' + '999' + '99' + '99' + lowestHeight + '1999999';
 }
 
 /**
@@ -674,6 +711,66 @@ function mapPressureTendency(measurementCode) {
     if (mc.includes('none')) return '9';
 
     return '9';
+}
+
+/**
+ * Extract numeric weather code from GHCNh present weather string
+ * e.g., "SN:71" -> "71", "-SN:03" -> "03"
+ */
+function extractWeatherCode(weatherStr) {
+    if (!weatherStr) return null;
+    const match = weatherStr.match(/:(\d+)/);
+    return match ? match[1] : null;
+}
+
+/**
+ * Map GHCNh present weather to AU1 format
+ * Format: intensity(1) + descriptor(1) + precipitation(2) + obscuration(1) + other(1) + combination(1) + quality(1)
+ */
+function mapPresentWeatherAU(weatherStr) {
+    if (!weatherStr) return null;
+
+    // Parse the weather string (e.g., "-SN:03", "SN:71")
+    let intensity = '0'; // 0=none, 1=light, 2=moderate, 3=heavy
+    let descriptor = '0';
+    let precipitation = '00';
+    let obscuration = '0';
+    let other = '0';
+    let combination = '1'; // 1=not combined with other elements
+    let quality = '5';
+
+    // Check for intensity prefix
+    if (weatherStr.startsWith('-')) {
+        intensity = '1'; // light
+    } else if (weatherStr.startsWith('+')) {
+        intensity = '3'; // heavy
+    } else {
+        intensity = '0'; // moderate/none
+    }
+
+    // Map precipitation types
+    if (weatherStr.includes('SN')) {
+        precipitation = '03'; // Snow
+    } else if (weatherStr.includes('RA')) {
+        precipitation = '01'; // Rain
+    } else if (weatherStr.includes('DZ')) {
+        precipitation = '02'; // Drizzle
+    } else if (weatherStr.includes('PL') || weatherStr.includes('PE')) {
+        precipitation = '04'; // Ice pellets
+    } else if (weatherStr.includes('GR') || weatherStr.includes('GS')) {
+        precipitation = '05'; // Hail
+    }
+
+    // Map obscuration
+    if (weatherStr.includes('BR')) {
+        obscuration = '1'; // Mist
+    } else if (weatherStr.includes('FG')) {
+        obscuration = '2'; // Fog
+    } else if (weatherStr.includes('HZ')) {
+        obscuration = '5'; // Haze
+    }
+
+    return intensity + descriptor + precipitation + obscuration + other + combination + quality;
 }
 
 /**
