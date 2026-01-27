@@ -740,10 +740,23 @@ function buildGFSection(record) {
             opaqueCover = '95'; // METAR-style opaque cover indicator
         }
     }
-    // For SYNOP records with height but no coverage, use '08' for total cover and '91' for opaque
-    else if (baseHt && baseHt !== '') {
-        totalCover = '08';
-        opaqueCover = '91';
+    // For SYNOP records, extract total cloud cover from remarks
+    // SYNOP format: SYN[id] [iRixhVV] [Nddff] where N is total cloud (0-9 oktas)
+    else {
+        const remarks = record.remarks || '';
+        // Match pattern: SYN followed by digits, then space, then 5 digits, then space, then Nddff
+        const synopMatch = remarks.match(/SYN\d+\s+\d{5}\s+(\d)\d{4}/);
+        if (synopMatch) {
+            const cloudOktas = parseInt(synopMatch[1], 10);
+            if (!isNaN(cloudOktas) && cloudOktas >= 0 && cloudOktas <= 9) {
+                totalCover = String(cloudOktas).padStart(2, '0');
+                opaqueCover = '91'; // SYNOP-style opaque cover indicator
+            }
+        } else if (baseHt && baseHt !== '') {
+            // Fallback if no SYNOP remarks - use '08' as default
+            totalCover = '08';
+            opaqueCover = '91';
+        }
     }
 
     // Build GF1 section with proper format (23 chars after GF1)
