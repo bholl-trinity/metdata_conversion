@@ -354,6 +354,7 @@ function formatCeiling(record) {
     ];
 
     // Ceiling is the lowest BKN, OVC, or VV layer
+    let foundCeiling = false;
     for (const field of coverFields) {
         if (field.cover && (field.cover.includes('BKN') || field.cover.includes('OVC') || field.cover.includes('VV'))) {
             if (field.height && field.height !== '') {
@@ -363,14 +364,19 @@ function formatCeiling(record) {
                     result.height = String(heightVal).padStart(5, '0');
                     result.quality = '5';
                     result.determination = 'M';
+                    foundCeiling = true;
                     break;
                 }
             }
         }
     }
 
-    // If we have cloud cover but no ceiling (FEW/SCT only), it's still 22000
-    // but we found a height for it
+    // If we have cloud cover but no ceiling (FEW/SCT only), use 22000 (unlimited)
+    if (!foundCeiling) {
+        result.height = '22000';
+        result.quality = '5';
+        result.determination = '9';
+    }
 
     return result;
 }
@@ -539,28 +545,30 @@ function buildAdditionalDataSection(record) {
         }
     });
 
-    // GD1-GD3 - Sky cover summation state
+    // GD1-GD3 - Sky cover summation state (METAR only, not for SYNOP records)
     // Format: GD1 + coverage(1) + cov_qc(1) + base_qc(1) + char(1) + height(6,signed) + height_qc(1) + qc(1)
-    skyCoverFields.forEach((field, idx) => {
-        // Output GD section if cover OR height exists (SYNOP has height without coverage)
-        const hasCover = field.cover && field.cover !== '';
-        const hasHeight = field.height && field.height !== '';
-        if (hasCover || hasHeight) {
-            const gdCode = 'GD' + (idx + 1);
-            // Use '9' (missing) for coverage amount when cover is empty
-            const coverAmount = hasCover ? mapSkyCoverAmount(field.cover) : '9';
-            let heightStr = '+99999';
-            if (hasHeight) {
-                let h = field.height.replace(/^\+/, '');
-                h = parseInt(h, 10);
-                if (!isNaN(h)) {
-                    const sign = h >= 0 ? '+' : '-';
-                    heightStr = sign + String(Math.abs(h)).padStart(5, '0');
+    // Only output GD sections when sky_cover_1 has coverage (METAR records)
+    const firstHasCover = skyCoverFields[0].cover && skyCoverFields[0].cover !== '';
+    if (firstHasCover) {
+        skyCoverFields.forEach((field, idx) => {
+            const hasCover = field.cover && field.cover !== '';
+            const hasHeight = field.height && field.height !== '';
+            if (hasCover || hasHeight) {
+                const gdCode = 'GD' + (idx + 1);
+                const coverAmount = hasCover ? mapSkyCoverAmount(field.cover) : '9';
+                let heightStr = '+99999';
+                if (hasHeight) {
+                    let h = field.height.replace(/^\+/, '');
+                    h = parseInt(h, 10);
+                    if (!isNaN(h)) {
+                        const sign = h >= 0 ? '+' : '-';
+                        heightStr = sign + String(Math.abs(h)).padStart(5, '0');
+                    }
                 }
+                addSection += gdCode + coverAmount + '991' + heightStr + '59';
             }
-            addSection += gdCode + coverAmount + '991' + heightStr + '59';
-        }
-    });
+        });
+    }
 
     // GE1 - Sky condition observation
     addSection += 'GE19AGL   +99999+99999';
@@ -688,6 +696,8 @@ function mapSkyCoverAmount(cover) {
  */
 function buildGFSection(record) {
     const skyCover1 = record.sky_cover_1 || '';
+    const skyCover2 = record.sky_cover_2 || '';
+    const skyCover3 = record.sky_cover_3 || '';
     let lowestHeight = '99999';
     let totalCover = '99';
     let opaqueCover = '99';
@@ -702,9 +712,36 @@ function buildGFSection(record) {
         }
     }
 
+    // For METAR records with coverage data
+    if (skyCover1 !== '') {
+        const allCovers = [skyCover1, skyCover2, skyCover3];
+
+        // Check if there's a ceiling (BKN, OVC, or VV)
+        const hasCeiling = allCovers.some(c =>
+            c && (c.indexOf('BKN') !== -1 || c.indexOf('OVC') !== -1 || c.indexOf('VV') !== -1)
+        );
+
+        if (hasCeiling) {
+            // When ceiling exists, use '99' for totalCover (missing)
+            totalCover = '99';
+            opaqueCover = '99';
+        } else {
+            // No ceiling - find the highest coverage okta
+            let maxOkta = 0;
+            for (const cover of allCovers) {
+                if (!cover) continue;
+                const oktaMatch = cover.match(/:(\d+)/);
+                if (oktaMatch) {
+                    const okta = parseInt(oktaMatch[1], 10);
+                    if (okta > maxOkta) maxOkta = okta;
+                }
+            }
+            totalCover = String(maxOkta).padStart(2, '0');
+            opaqueCover = '95'; // METAR-style opaque cover indicator
+        }
+    }
     // For SYNOP records with height but no coverage, use '08' for total cover and '91' for opaque
-    // This matches the expected ISD format for SYNOP records
-    if (skyCover1 === '' && baseHt && baseHt !== '') {
+    else if (baseHt && baseHt !== '') {
         totalCover = '08';
         opaqueCover = '91';
     }
