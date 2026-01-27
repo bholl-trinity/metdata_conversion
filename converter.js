@@ -115,6 +115,9 @@ async function processFile(file) {
         // Parse the GHCNh file using the module
         ghcnhData = GHCNhToISD.parseGHCNh(text);
 
+        // Fill in missing sky_cover data from previous records within 45 minutes
+        GHCNhToISD.fillMissingSkyCover(ghcnhData.records);
+
         progressFill.style.width = '100%';
         progressText.textContent = 'File loaded successfully!';
 
