@@ -239,31 +239,11 @@ function downloadISD() {
         return;
     }
 
-    // Generate filename based on input
-    let filename = 'converted.isd';
+    // Generate filename: same as input but with .ish extension
+    let filename = 'converted.ish';
     if (currentFile) {
-        // Try to extract station info from filename
-        const match = currentFile.name.match(/GHCNh_(\w+)_/);
-        if (match && ghcnhData && ghcnhData.records.length > 0) {
-            const record = ghcnhData.records[0];
-            const sourceId = record.temperature_Source_Station_ID || '';
-            if (sourceId.includes('-') && !sourceId.includes('ICAO')) {
-                filename = sourceId.replace('-', '') + '-converted';
-            } else {
-                filename = match[1] + '-converted';
-            }
-        }
-
-        // Add year range
-        if (ghcnhData && ghcnhData.records.length > 0) {
-            const firstYear = ghcnhData.records[0].Year;
-            const lastYear = ghcnhData.records[ghcnhData.records.length - 1].Year;
-            if (firstYear === lastYear) {
-                filename += '-' + firstYear;
-            } else {
-                filename += '-' + firstYear + '-' + lastYear;
-            }
-        }
+        const baseName = currentFile.name.replace(/\.[^/.]+$/, '');
+        filename = baseName + '.ish';
     }
 
     const blob = new Blob([isdOutput], { type: 'text/plain' });
