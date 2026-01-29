@@ -43,3 +43,19 @@ FM-12 SYNOP reports typically have blank `sky_cover` fields, which can cause pro
 - SYNOP reports are issued every 3 hours (at :00)
 - A 45-minute window ensures that the most recent METAR before a SYNOP will be used if available
 
+## CAVOK Clear Sky Handling
+
+Some weather stations record clear sky conditions by leaving the `sky_cover_1/2/3` fields blank and instead including "CAVOK" in the remarks field. CAVOK (Ceiling And Visibility OK) is an aviation weather term indicating clear skies with no significant weather.
+
+**How it works:**
+- Before processing sky cover fields, the converter checks if all `sky_cover_1`, `sky_cover_2`, and `sky_cover_3` fields (and their base heights) are empty
+- If all sky cover fields are empty AND the remarks field contains "CAVOK", the converter outputs a GA1 record indicating clear skies: `GA1005+999999999`
+  - `00` = 0/8ths cloud cover (clear)
+  - `5` = Quality code (passed all QC)
+  - `+99999` = Missing height (not applicable for clear sky)
+- If any sky cover field has data (including explicit `CLR:00`), normal processing is used
+
+**Why this matters:**
+- Without this handling, CAVOK records would have no GA section in the output, losing the "clear sky" information
+- This ensures proper conversion of clear-sky observations that use the CAVOK convention
+
