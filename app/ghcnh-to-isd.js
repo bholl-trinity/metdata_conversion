@@ -522,32 +522,46 @@ function buildAdditionalDataSection(record) {
         { cover: record.sky_cover_3, height: record.sky_cover_baseht_3 }
     ];
 
-    skyCoverFields.forEach((field, idx) => {
-        // Output GA section if cover OR height exists (SYNOP has height without coverage)
-        const hasCover = field.cover && field.cover !== '';
-        const hasHeight = field.height && field.height !== '';
-        if (hasCover || hasHeight) {
-            const gaCode = 'GA' + (idx + 1);
-            // Use '99' (missing) for coverage when cover is empty but height exists
-            const coverCode = hasCover ? mapSkyCoverCode(field.cover) : '99';
-            // Coverage QC: '9' if coverage is missing, '5' if present
-            const coverQuality = hasCover ? '5' : '9';
-            let heightStr = '+99999';
-            // Height QC: '5' if coverage present (NCEI source), '1' if SYNOP-style, '9' if missing
-            let heightQuality = '9';
-            if (hasHeight) {
-                let h = field.height.replace(/^\+/, '');
-                h = parseInt(h, 10);
-                if (!isNaN(h)) {
-                    const sign = h >= 0 ? '+' : '-';
-                    heightStr = sign + String(Math.abs(h)).padStart(5, '0');
-                    // Use '5' for METAR records (has coverage), '1' for SYNOP (no coverage)
-                    heightQuality = hasCover ? '5' : '1';
+    // Check if all sky_cover fields are empty
+    const allSkyCoverEmpty = skyCoverFields.every(field =>
+        (!field.cover || field.cover === '') && (!field.height || field.height === '')
+    );
+
+    // If all sky_cover fields are empty, check for CAVOK in remarks
+    // CAVOK indicates clear skies (Ceiling And Visibility OK)
+    const remarks = record.remarks || '';
+    if (allSkyCoverEmpty && remarks.includes('CAVOK')) {
+        // Output GA1 with clear sky (0 oktas) when CAVOK is present and no sky_cover data
+        addSection += 'GA1' + '00' + '5' + '+99999' + '9' + '999';
+    } else {
+        // Normal processing of sky cover fields
+        skyCoverFields.forEach((field, idx) => {
+            // Output GA section if cover OR height exists (SYNOP has height without coverage)
+            const hasCover = field.cover && field.cover !== '';
+            const hasHeight = field.height && field.height !== '';
+            if (hasCover || hasHeight) {
+                const gaCode = 'GA' + (idx + 1);
+                // Use '99' (missing) for coverage when cover is empty but height exists
+                const coverCode = hasCover ? mapSkyCoverCode(field.cover) : '99';
+                // Coverage QC: '9' if coverage is missing, '5' if present
+                const coverQuality = hasCover ? '5' : '9';
+                let heightStr = '+99999';
+                // Height QC: '5' if coverage present (NCEI source), '1' if SYNOP-style, '9' if missing
+                let heightQuality = '9';
+                if (hasHeight) {
+                    let h = field.height.replace(/^\+/, '');
+                    h = parseInt(h, 10);
+                    if (!isNaN(h)) {
+                        const sign = h >= 0 ? '+' : '-';
+                        heightStr = sign + String(Math.abs(h)).padStart(5, '0');
+                        // Use '5' for METAR records (has coverage), '1' for SYNOP (no coverage)
+                        heightQuality = hasCover ? '5' : '1';
+                    }
                 }
+                addSection += gaCode + coverCode + coverQuality + heightStr + heightQuality + '999';
             }
-            addSection += gaCode + coverCode + coverQuality + heightStr + heightQuality + '999';
-        }
-    });
+        });
+    }
 
     // NOTE: GD (sky cover summation state), GE (sky condition observation), and
     // GF (sky condition summary) sections are NOT output because GHCNh only provides
@@ -616,8 +630,7 @@ function buildAdditionalDataSection(record) {
         }
     }
 
-    // REM - Remarks
-    const remarks = record.remarks;
+    // REM - Remarks (remarks variable already defined above for CAVOK check)
     if (remarks && remarks !== '') {
         // Clean up remarks and truncate if needed
         const remStr = remarks.slice(0, 500);
