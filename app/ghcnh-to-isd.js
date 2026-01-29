@@ -527,11 +527,10 @@ function buildAdditionalDataSection(record) {
         (!field.cover || field.cover === '') && (!field.height || field.height === '')
     );
 
-    // If all sky_cover fields are empty, check for CAVOK in remarks
-    // CAVOK indicates clear skies (Ceiling And Visibility OK)
-    const remarks = record.remarks || '';
-    if (allSkyCoverEmpty && remarks.includes('CAVOK')) {
-        // Output GA1 with clear sky (0 oktas) when CAVOK is present and no sky_cover data
+    // If all sky_cover fields are empty, output clear sky (0 oktas)
+    // This handles stations that leave sky_cover blank when skies are clear
+    if (allSkyCoverEmpty) {
+        // Output GA1 with clear sky (0 oktas) when no sky_cover data exists
         addSection += 'GA1' + '00' + '5' + '+99999' + '9' + '999';
     } else {
         // Normal processing of sky cover fields
@@ -630,7 +629,8 @@ function buildAdditionalDataSection(record) {
         }
     }
 
-    // REM - Remarks (remarks variable already defined above for CAVOK check)
+    // REM - Remarks
+    const remarks = record.remarks || '';
     if (remarks && remarks !== '') {
         // Clean up remarks and truncate if needed
         const remStr = remarks.slice(0, 500);
