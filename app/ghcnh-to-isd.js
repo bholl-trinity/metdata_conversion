@@ -933,5 +933,6 @@ exports.parseGHCNh = parseGHCNh;
 exports.convertRecordToISD = convertRecordToISD;
 exports.convertGHCNhToISD = convertGHCNhToISD;
 exports.fillMissingSkyCover = fillMissingSkyCover;
+exports.buildStationIdMap = buildStationIdMap;
 
 })(typeof exports !== 'undefined' ? exports : (window.GHCNhToISD = {}));
