@@ -130,7 +130,7 @@ function shiftToLocalTime(record, utcOffset) {
     // Use Date object as timezone-neutral arithmetic helper
     // All operations use UTC methods to avoid browser timezone interference
     var d = new Date(Date.UTC(utcYear, utcMonth - 1, utcDay, utcHour, utcMinute));
-    d.setUTCHours(d.getUTCHours() + utcOffset);
+    d.setUTCHours(d.getUTCHours() + utcOffset + 1);
 
     return {
         year: d.getUTCFullYear(),
@@ -220,7 +220,7 @@ function formatCD144Temperature(tempC) {
         var absF = Math.min(Math.abs(f), 99); // Clamp to 2 digits after X
         return 'X' + String(absF).padStart(2, '0');
     }
-    return String(f).padStart(3, ' ');
+    return String(f).padStart(3, '0');
 }
 
 /**
