@@ -217,8 +217,8 @@ function formatCD144Temperature(tempC) {
     var f = Math.round(num * 9 / 5 + 32);
 
     if (f < 0) {
-        var absF = Math.min(Math.abs(f), 99); // Clamp to 2 digits after X
-        return 'X' + String(absF).padStart(2, '0');
+        var absF = Math.min(Math.abs(f), 99); // Clamp to 2 digits after sign
+        return '-' + String(absF).padStart(2, '0');
     }
     return String(f).padStart(3, '0');
 }
