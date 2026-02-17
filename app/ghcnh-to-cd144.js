@@ -220,7 +220,7 @@ function formatCD144Temperature(tempC) {
         var absF = Math.min(Math.abs(f), 99); // Clamp to 2 digits after X
         return 'X' + String(absF).padStart(2, '0');
     }
-    return String(f).padStart(3, ' ');
+    return String(f).padStart(3, '0');
 }
 
 /**
