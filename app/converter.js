@@ -1,14 +1,16 @@
 /**
- * GHCNh to ISD Converter - UI Handler
- * This file handles the browser UI and uses the ghcnh-to-isd.js module for conversion
+ * GHCNh Format Converter - UI Handler
+ * This file handles the browser UI and uses ghcnh-to-isd.js and ghcnh-to-cd144.js for conversion
  */
 
 // Global state
 let ghcnhData = null;
 let isdOutput = null;
+let cd144Files = null;
 let inputPreview = '';
 let outputPreview = '';
 let currentFile = null;
+let selectedFormat = 'isd';
 
 // DOM Elements
 const dropZone = document.getElementById('dropZone');
@@ -25,6 +27,11 @@ const statsContainer = document.getElementById('statsContainer');
 const previewContainer = document.getElementById('previewContainer');
 const previewContent = document.getElementById('previewContent');
 const mappingInfo = document.getElementById('mappingInfo');
+const conversionOptions = document.getElementById('conversionOptions');
+const outputFormatSelect = document.getElementById('outputFormat');
+const cd144Options = document.getElementById('cd144Options');
+const utcOffsetInput = document.getElementById('utcOffset');
+const outputTab = document.getElementById('outputTab');
 
 // Initialize event listeners
 dropZone.addEventListener('click', () => fileInput.click());
@@ -33,10 +40,29 @@ dropZone.addEventListener('dragleave', handleDragLeave);
 dropZone.addEventListener('drop', handleDrop);
 fileInput.addEventListener('change', handleFileSelect);
 convertBtn.addEventListener('click', startConversion);
-downloadBtn.addEventListener('click', downloadISD);
+downloadBtn.addEventListener('click', downloadOutput);
 resetBtn.addEventListener('click', resetApp);
 mappingInfo.querySelector('h3').addEventListener('click', () => {
     mappingInfo.classList.toggle('expanded');
+});
+
+// Format selector
+outputFormatSelect.addEventListener('change', function() {
+    selectedFormat = this.value;
+    if (selectedFormat === 'cd144') {
+        cd144Options.style.display = 'block';
+        convertBtn.textContent = 'Convert to CD144';
+        outputTab.textContent = 'Output (CD144)';
+    } else {
+        cd144Options.style.display = 'none';
+        convertBtn.textContent = 'Convert to ISD';
+        outputTab.textContent = 'Output (ISD)';
+    }
+    // Reset output since format changed
+    isdOutput = null;
+    cd144Files = null;
+    downloadBtn.disabled = true;
+    statsContainer.classList.remove('visible');
 });
 
 // Tab switching
@@ -136,6 +162,7 @@ async function processFile(file) {
         }
 
         fileInfo.classList.add('visible');
+        conversionOptions.classList.add('visible');
         convertBtn.disabled = false;
 
         // Create input preview
@@ -155,7 +182,7 @@ async function processFile(file) {
 }
 
 /**
- * Start the conversion process
+ * Start the conversion process - branches by selected format
  */
 async function startConversion() {
     if (!ghcnhData || ghcnhData.records.length === 0) {
@@ -170,11 +197,22 @@ async function startConversion() {
     progressText.textContent = 'Converting records...';
 
     const startTime = performance.now();
+
+    if (selectedFormat === 'cd144') {
+        await startCD144Conversion(startTime);
+    } else {
+        await startISDConversion(startTime);
+    }
+}
+
+/**
+ * ISD conversion (existing logic)
+ */
+async function startISDConversion(startTime) {
     let converted = 0;
     let skipped = 0;
     const outputLines = [];
 
-    // Process in chunks for responsiveness
     const chunkSize = 1000;
     const totalRecords = ghcnhData.records.length;
 
@@ -195,12 +233,10 @@ async function startConversion() {
             }
         }
 
-        // Update progress
         const progress = Math.min(100, Math.round(((i + chunk.length) / totalRecords) * 100));
         progressFill.style.width = progress + '%';
         progressText.textContent = `Converting... ${i + chunk.length} / ${totalRecords} records`;
 
-        // Yield to UI
         await new Promise(resolve => setTimeout(resolve, 0));
     }
 
@@ -208,8 +244,8 @@ async function startConversion() {
     const duration = ((endTime - startTime) / 1000).toFixed(2);
 
     isdOutput = outputLines.join('\n');
+    cd144Files = null;
 
-    // Update stats
     document.getElementById('statRecords').textContent = converted.toLocaleString();
     document.getElementById('statSkipped').textContent = skipped.toLocaleString();
     document.getElementById('statOutputSize').textContent = formatFileSize(isdOutput.length);
@@ -217,17 +253,87 @@ async function startConversion() {
 
     statsContainer.classList.add('visible');
 
-    // Create output preview
     outputPreview = outputLines.slice(0, 10).join('\n');
 
     progressFill.style.width = '100%';
     progressText.textContent = 'Conversion complete!';
-
     downloadBtn.disabled = false;
 
     setTimeout(() => {
         progressContainer.classList.remove('visible');
     }, 1500);
+}
+
+/**
+ * CD144 conversion
+ */
+async function startCD144Conversion(startTime) {
+    const utcOffset = parseInt(utcOffsetInput.value, 10);
+    if (isNaN(utcOffset) || utcOffset < -12 || utcOffset > 14) {
+        showError('Please enter a valid UTC offset between -12 and +14');
+        convertBtn.disabled = false;
+        progressContainer.classList.remove('visible');
+        return;
+    }
+
+    progressText.textContent = 'Reading file for CD144 conversion...';
+    progressFill.style.width = '10%';
+
+    try {
+        const text = await currentFile.text();
+        const inputFilename = currentFile ? currentFile.name : 'output.met';
+
+        const result = GHCNhToCD144.convertGHCNhToCD144(text, utcOffset, inputFilename, function(current, total) {
+            const pct = Math.min(100, Math.round((current / total) * 100));
+            progressFill.style.width = pct + '%';
+            progressText.textContent = 'Building CD144 hourly grid... ' + pct + '%';
+        });
+
+        const endTime = performance.now();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
+
+        cd144Files = result.files;
+        isdOutput = null;
+
+        let recordsText = result.converted.toLocaleString();
+        if (result.files.length > 1) {
+            recordsText += ' (' + result.files.length + ' files)';
+        }
+        document.getElementById('statRecords').textContent = recordsText;
+        document.getElementById('statSkipped').textContent = result.skipped.toLocaleString();
+
+        const totalSize = result.files.reduce(function(sum, f) { return sum + f.output.length; }, 0);
+        document.getElementById('statOutputSize').textContent = formatFileSize(totalSize);
+        document.getElementById('statTime').textContent = duration + 's';
+
+        statsContainer.classList.add('visible');
+
+        outputPreview = result.files[0].output.split('\n').slice(0, 10).join('\n');
+
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Conversion complete!';
+        downloadBtn.disabled = false;
+
+        setTimeout(() => {
+            progressContainer.classList.remove('visible');
+        }, 1500);
+
+    } catch (err) {
+        showError('CD144 conversion error: ' + err.message);
+        progressContainer.classList.remove('visible');
+        convertBtn.disabled = false;
+    }
+}
+
+/**
+ * Download the converted output file(s)
+ */
+function downloadOutput() {
+    if (selectedFormat === 'cd144') {
+        downloadCD144();
+    } else {
+        downloadISD();
+    }
 }
 
 /**
@@ -239,14 +345,42 @@ function downloadISD() {
         return;
     }
 
-    // Generate filename: same as input but with .ish extension
     let filename = 'converted.ish';
     if (currentFile) {
         const baseName = currentFile.name.replace(/\.[^/.]+$/, '');
         filename = baseName + '.ish';
     }
 
-    const blob = new Blob([isdOutput], { type: 'text/plain' });
+    downloadBlob(isdOutput, filename);
+}
+
+/**
+ * Download CD144 file(s)
+ */
+function downloadCD144() {
+    if (!cd144Files || cd144Files.length === 0) {
+        showError('No converted data to download');
+        return;
+    }
+
+    if (cd144Files.length === 1) {
+        downloadBlob(cd144Files[0].output, cd144Files[0].filename);
+    } else {
+        // Multiple files: download each with a small delay
+        for (let i = 0; i < cd144Files.length; i++) {
+            const file = cd144Files[i];
+            setTimeout(function() {
+                downloadBlob(file.output, file.filename);
+            }, i * 500);
+        }
+    }
+}
+
+/**
+ * Helper: trigger browser download of text content
+ */
+function downloadBlob(content, filename) {
+    const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -263,6 +397,7 @@ function downloadISD() {
 function resetApp() {
     ghcnhData = null;
     isdOutput = null;
+    cd144Files = null;
     inputPreview = '';
     outputPreview = '';
     currentFile = null;
@@ -270,10 +405,18 @@ function resetApp() {
     dropZone.classList.remove('has-file');
     fileInput.value = '';
     fileInfo.classList.remove('visible');
+    conversionOptions.classList.remove('visible');
     progressContainer.classList.remove('visible');
     statsContainer.classList.remove('visible');
     previewContainer.classList.remove('visible');
     hideError();
+
+    // Reset format selection
+    selectedFormat = 'isd';
+    outputFormatSelect.value = 'isd';
+    cd144Options.style.display = 'none';
+    convertBtn.textContent = 'Convert to ISD';
+    outputTab.textContent = 'Output (ISD)';
 
     convertBtn.disabled = true;
     downloadBtn.disabled = true;
