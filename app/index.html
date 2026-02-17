@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GHCNh to ISD Converter</title>
+    <title>GHCNh Format Converter</title>
     <style>
         * {
             box-sizing: border-box;
@@ -332,14 +332,61 @@
         .mapping-table tr:nth-child(even) {
             background: #f8f9fa;
         }
+
+        .conversion-options {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .conversion-options.visible {
+            display: block;
+        }
+
+        .conversion-options h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .option-group label {
+            display: block;
+            font-weight: bold;
+            color: #666;
+            font-size: 0.85em;
+            margin-bottom: 5px;
+        }
+
+        .option-group select,
+        .option-group input[type="number"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .option-hint {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 5px;
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
-    <h1>GHCNh to ISD Format Converter</h1>
+    <h1>GHCNh Format Converter</h1>
 
     <div class="description">
-        <p><strong>Convert Global Historical Climatology Network hourly (GHCNh) files to Integrated Surface Data (ISD) format.</strong></p>
-        <p>Upload a GHCNh <code>.psv</code> file (pipe-separated values) and download the converted ISD fixed-width format file.</p>
+        <p><strong>Convert Global Historical Climatology Network hourly (GHCNh) files to ISD or CD144 format.</strong></p>
+        <p>Upload a GHCNh <code>.psv</code> file (pipe-separated values) and download the converted output file.</p>
     </div>
 
     <div class="drop-zone" id="dropZone">
@@ -380,6 +427,27 @@
         </div>
     </div>
 
+    <div class="conversion-options" id="conversionOptions">
+        <h3>Conversion Settings</h3>
+        <div class="options-grid">
+            <div class="option-group">
+                <label for="outputFormat">Output Format</label>
+                <select id="outputFormat">
+                    <option value="isd" selected>ISD (Integrated Surface Data)</option>
+                    <option value="cd144">CD144 (.met file for AERMOD/ISC)</option>
+                </select>
+            </div>
+            <div class="option-group" id="cd144Options" style="display: none;">
+                <label for="utcOffset">UTC Offset (hours)</label>
+                <input type="number" id="utcOffset" min="-12" max="14" step="1" value="-5">
+                <p class="option-hint">
+                    Negative = west of UTC (e.g., -5 for US Eastern, -6 for US Central).<br>
+                    Positive = east of UTC (e.g., +1 for Central European, +8 for China).
+                </p>
+            </div>
+        </div>
+    </div>
+
     <div class="progress-container" id="progressContainer">
         <h3>Converting...</h3>
         <div class="progress-bar">
@@ -390,7 +458,7 @@
 
     <div class="buttons">
         <button class="btn-primary" id="convertBtn" disabled>Convert to ISD</button>
-        <button class="btn-success" id="downloadBtn" disabled>Download ISD File</button>
+        <button class="btn-success" id="downloadBtn" disabled>Download File</button>
         <button class="btn-secondary" id="resetBtn">Reset</button>
     </div>
 
@@ -422,7 +490,7 @@
         <h3>Preview</h3>
         <div class="preview-tabs">
             <button class="preview-tab active" data-tab="input">Input (GHCNh)</button>
-            <button class="preview-tab" data-tab="output">Output (ISD)</button>
+            <button class="preview-tab" data-tab="output" id="outputTab">Output (ISD)</button>
         </div>
         <div class="preview-content" id="previewContent"></div>
     </div>
@@ -459,6 +527,7 @@
     </div>
 
     <script src="ghcnh-to-isd.js"></script>
+    <script src="ghcnh-to-cd144.js"></script>
     <script src="converter.js"></script>
 </body>
 </html>
