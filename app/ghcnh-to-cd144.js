@@ -130,7 +130,7 @@ function shiftToLocalTime(record, utcOffset) {
     // Use Date object as timezone-neutral arithmetic helper
     // All operations use UTC methods to avoid browser timezone interference
     var d = new Date(Date.UTC(utcYear, utcMonth - 1, utcDay, utcHour, utcMinute));
-    d.setUTCHours(d.getUTCHours() + utcOffset);
+    d.setUTCHours(d.getUTCHours() + utcOffset + 1);
 
     return {
         year: d.getUTCFullYear(),
