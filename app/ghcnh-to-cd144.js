@@ -330,7 +330,7 @@ function formatCD144RelativeHumidity(record) {
 /**
  * Format total cloud cover in tenths (0-9, "-" for 100% overcast)
  * Takes maximum oktas from any cloud layer
- * Returns " " (1 space) if no cloud data
+ * Returns "0" (clear) if no cloud data (e.g. CAVOK hours)
  */
 function formatCD144CloudCover(record) {
     var coverFields = [record.sky_cover_1, record.sky_cover_2, record.sky_cover_3];
@@ -346,7 +346,7 @@ function formatCD144CloudCover(record) {
         if (oktas > maxOktas) maxOktas = oktas;
     }
 
-    if (!hasAnyCover) return ' '; // No cloud data
+    if (!hasAnyCover) return '0'; // No cloud layers reported = clear sky (e.g. CAVOK)
 
     if (maxOktas === 8) return '-'; // 100% overcast
     if (maxOktas <= 0) return '0'; // Clear
