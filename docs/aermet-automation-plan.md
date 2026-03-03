@@ -38,7 +38,7 @@ support GHCNh natively, this conversion step can be removed.
 | Layer | Technology | Notes |
 |-------|-----------|-------|
 | **Frontend** | HTML / CSS / vanilla JS | Browser-based UI; served locally by the Python backend |
-| **Backend** | Python (Flask) | Local Windows server; handles file I/O, subprocess execution, data downloads |
+| **Backend** | Python (Flask) | Local Windows server; handles file I/O, subprocess execution, data downloads. Distributed as unzip-and-run (PyInstaller bundle or embedded Python). |
 | **EPA Utilities** | AERMET.exe, AERSURFACE.exe, AERMINUTE.exe | Executed locally via `subprocess` |
 | **Data Downloads** | Python `requests` | Surface (GHCNh from NCEI → converted to ISD), upper air (Wyoming), 1-min ASOS |
 | **Format Conversion** | Existing ghcnh-to-isd.js (ported to Python or called via Node) | GHCNh → ISD conversion; temporary until EPA adds native GHCNh support |
@@ -511,21 +511,19 @@ METPREP
 - ~~Existing converter integration~~: **Yes** — GHCNh→ISD converter will be used as intermediate step until EPA updates AERMET. Confirmed.
 - ~~EPA executable distribution~~: **Bundle in repo.** AERMET.exe, AERSURFACE.exe, and AERMINUTE.exe will be included in the repository/package so they ship with the tool. No separate install needed.
 - ~~NLCD download strategy~~: **API-first, with guided manual fallback.** We will investigate whether MRLC/USGS/TNM has an API to programmatically download a clipped area. If an API is available, automate it. If not, guide the user through the manual download process — e.g., generate a URL with pre-loaded coordinate boundaries for the relevant website (nationalmap.gov or MRLC clearinghouse) so the user can quickly grab the right file. No AI-driven browser automation (no Claude/Cowork dependency). User can also provide their own NLCD file directly.
+- ~~GHCNh→ISD converter porting~~: **Best technical approach, implementer's discretion.** Reuse the existing converter logic in whatever way is most practical for the Python backend (likely a Python port of the core JS logic).
+- ~~Onsite data~~: **Deferred to future release.** Not in v1.
+- ~~User distribution~~: **Zero-install, unzip-and-run.** The tool should be distributable as a ZIP that the user extracts and launches — no formal installation, no pip install, no Docker. A batch file launcher starts the Python backend and opens the browser. This means either bundling a Python runtime (via PyInstaller or embedded Python) or requiring Python as the sole prerequisite.
 
 ### Still Open
 1. **Multi-year handling**: Run AERMET per-year or multi-year in a single run?
    Per-year is simpler for quality checking but requires more control files.
-2. **Onsite data**: Should we support onsite meteorological data as an optional
-   input? (AERMET supports it but it adds significant complexity)
-3. **GHCNh→ISD converter porting**: Port the JavaScript converter to Python
-   for server-side use, or use a JS runtime (Node.js) as a subprocess?
-   Python port is cleaner but requires re-implementation effort.
-4. **IGRA format parsing**: Need to investigate the exact IGRA download format
+2. **IGRA format parsing**: Need to investigate the exact IGRA download format
    and write a parser/converter to FSL format. The existing `uwyo_to_fsl.py`
    handles FSL output but parses Wyoming CSV input — the IGRA input format
    is different.
-5. **User distribution**: How will end users install/run this tool? Options:
-   - Python + pip install with a launch script
-   - Bundled executable via PyInstaller
-   - Docker container (adds complexity for Windows users)
-   - Simple ZIP with batch file launcher
+
+### Deferred to Future Release
+- **Onsite data**: AERMET supports onsite meteorological data as an optional
+  input, but this adds significant complexity. Will not be in the initial
+  release; can be added later.
