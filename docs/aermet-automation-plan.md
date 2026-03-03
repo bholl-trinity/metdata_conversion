@@ -200,11 +200,20 @@ NLCD GeoTIFF files are very large (full CONUS is multiple GB). Approach:
 This is the key differentiator — running AERMET Stage 1 to evaluate whether
 candidate station/year combinations meet the user's completeness criteria.
 
+**Completeness is assessed from the final SFC output file**, not from raw
+inputs or intermediate AERMET messages. A given hour's validity depends on
+the combination of surface and upper air values — the same observation may
+be valid for one time of day but missing at another. Therefore:
+
 **For each candidate surface station × year:**
-1. Generate AERMET Stage 1 control file (EXTRACT pathway)
-2. Execute AERMET.exe Stage 1
-3. Parse the AERMET message file for data recovery statistics
-4. Calculate completeness:
+1. Run the full AERMET pipeline (Stages 1–3) to produce a preliminary SFC file
+2. Parse the SFC output file to calculate hourly completeness:
+   - An hour is **valid** if it contains real (non-missing) values for key
+     parameters (e.g., surface heat flux is a real value, not a missing code)
+   - An hour with **calm winds** (zero wind speed) is **not** counted as missing
+   - Missing-value sentinel codes in the SFC format indicate invalid hours
+3. Calculate completeness percentage = valid hours / total hours
+4. Evaluate against user threshold:
    - **Quarterly**: Each calendar quarter must meet threshold independently
    - **Annual**: Full year must meet threshold
 5. Flag pass/fail for each station-year combination
@@ -213,6 +222,11 @@ candidate station/year combinations meet the user's completeness criteria.
 - Table: Station × Year matrix with completeness percentages
 - Color-coded: green (pass), yellow (marginal), red (fail)
 - User selects final station-year combinations to proceed with
+
+**If completeness falls short:** Display a message to the user identifying
+which specific years or quarters fell below the completeness threshold and
+by how much. (Future enhancement: automatically check adjacent years for
+better-quality substitutes.)
 
 **Fallback logic:**
 - If preferred start year doesn't meet criteria, suggest alternative years
