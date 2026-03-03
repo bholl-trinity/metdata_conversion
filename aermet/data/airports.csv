@@ -1,0 +1,224 @@
+icao,name,lat,lon,country
+KATL,Hartsfield-Jackson Atlanta Intl,33.6407,-84.4277,US
+KBOS,Boston Logan Intl,42.3656,-71.0096,US
+KBWI,Baltimore/Washington Intl,39.1754,-76.6684,US
+KCLE,Cleveland Hopkins Intl,41.4117,-81.8498,US
+KCLT,Charlotte Douglas Intl,35.2140,-80.9431,US
+KCVG,Cincinnati/N Kentucky Intl,39.0488,-84.6678,US
+KDAL,Dallas Love Field,32.8471,-96.8518,US
+KDCA,Ronald Reagan Washington Natl,38.8521,-77.0377,US
+KDEN,Denver Intl,39.8561,-104.6737,US
+KDFW,Dallas/Fort Worth Intl,32.8968,-97.0380,US
+KDTW,Detroit Metropolitan Wayne County,42.2124,-83.3534,US
+KEWR,Newark Liberty Intl,40.6925,-74.1687,US
+KFLL,Fort Lauderdale/Hollywood Intl,26.0726,-80.1527,US
+KHOU,William P Hobby,29.6454,-95.2789,US
+KIAD,Washington Dulles Intl,38.9445,-77.4558,US
+KIAH,George Bush Intercontinental,29.9844,-95.3414,US
+KIND,Indianapolis Intl,39.7173,-86.2944,US
+KJFK,John F Kennedy Intl,40.6398,-73.7789,US
+KLAS,Harry Reid Intl (Las Vegas),36.0840,-115.1537,US
+KLAX,Los Angeles Intl,33.9425,-118.4081,US
+KLGA,LaGuardia,40.7772,-73.8726,US
+KMCI,Kansas City Intl,39.2976,-94.7139,US
+KMCO,Orlando Intl,28.4294,-81.3090,US
+KMDW,Chicago Midway Intl,41.7868,-87.7522,US
+KMEM,Memphis Intl,35.0424,-89.9767,US
+KMIA,Miami Intl,25.7932,-80.2906,US
+KMKE,Milwaukee Mitchell Intl,42.9472,-87.8966,US
+KMSP,Minneapolis-Saint Paul Intl,44.8820,-93.2218,US
+KMSY,Louis Armstrong New Orleans Intl,29.9934,-90.2580,US
+KOAK,Metropolitan Oakland Intl,37.7213,-122.2208,US
+KONT,Ontario Intl,34.0560,-117.6012,US
+KORD,Chicago O'Hare Intl,41.9742,-87.9073,US
+KPDX,Portland Intl,45.5887,-122.5975,US
+KPHL,Philadelphia Intl,39.8721,-75.2411,US
+KPHX,Phoenix Sky Harbor Intl,33.4373,-112.0078,US
+KPIT,Pittsburgh Intl,40.4915,-80.2329,US
+KRDU,Raleigh-Durham Intl,35.8776,-78.7875,US
+KRSW,Southwest Florida Intl,26.5362,-81.7552,US
+KSAN,San Diego Intl,32.7336,-117.1897,US
+KSAT,San Antonio Intl,29.5337,-98.4698,US
+KSDF,Louisville Muhammad Ali Intl,38.1744,-85.7360,US
+KSEA,Seattle-Tacoma Intl,47.4502,-122.3088,US
+KSFO,San Francisco Intl,37.6213,-122.3790,US
+KSJC,San Jose Intl,37.3626,-121.9291,US
+KSLC,Salt Lake City Intl,40.7884,-111.9778,US
+KSMF,Sacramento Intl,38.6954,-121.5908,US
+KSNA,John Wayne (Orange County),33.6757,-117.8683,US
+KSTL,St Louis Lambert Intl,38.7487,-90.3700,US
+KTPA,Tampa Intl,27.9755,-82.5332,US
+KTUS,Tucson Intl,32.1161,-110.9410,US
+KABQ,Albuquerque Intl Sunport,35.0402,-106.6092,US
+KAUS,Austin-Bergstrom Intl,30.1945,-97.6699,US
+KBDL,Bradley Intl (Hartford),41.9389,-72.6832,US
+KBHM,Birmingham-Shuttlesworth Intl,33.5629,-86.7535,US
+KBNA,Nashville Intl,36.1245,-86.6782,US
+KBUF,Buffalo Niagara Intl,42.9405,-78.7322,US
+KBTV,Burlington Intl,44.4719,-73.1533,US
+KCHS,Charleston Intl/AFB,32.8986,-80.0405,US
+KCOS,Colorado Springs Airport,38.8058,-104.7007,US
+KCRP,Corpus Christi Intl,27.7704,-97.5012,US
+KDAY,James M Cox Dayton Intl,39.9024,-84.2194,US
+KDLH,Duluth Intl,46.8421,-92.1936,US
+KDSM,Des Moines Intl,41.5340,-93.6631,US
+KELP,El Paso Intl,31.8073,-106.3778,US
+KEUG,Mahlon Sweet Field (Eugene),44.1246,-123.2119,US
+KFAT,Fresno Yosemite Intl,36.7762,-119.7181,US
+KFSD,Sioux Falls Regional,43.5820,-96.7419,US
+KFWA,Fort Wayne Intl,40.9785,-85.1951,US
+KGNV,Gainesville Regional,29.6900,-82.2718,US
+KGRR,Gerald R Ford Intl (Grand Rapids),42.8808,-85.5228,US
+KGSB,Seymour Johnson AFB (Goldsboro),35.3394,-77.9606,US
+KGSO,Piedmont Triad Intl (Greensboro),36.0978,-79.9373,US
+KGSP,Greenville-Spartanburg Intl,34.8957,-82.2189,US
+KHSV,Huntsville Intl,34.6372,-86.7751,US
+KICT,Wichita Dwight D Eisenhower Natl,37.6499,-97.4331,US
+KJAN,Jackson-Medgar Wiley Evers Intl,32.3112,-90.0759,US
+KJAX,Jacksonville Intl,30.4941,-81.6879,US
+KLEX,Blue Grass (Lexington),38.0365,-84.6059,US
+KLIN,Abraham Lincoln Capital (Springfield),39.8441,-89.6780,US
+KLIT,Clinton Natl (Little Rock),34.7294,-92.2243,US
+KLBB,Lubbock Preston Smith Intl,33.6636,-101.8228,US
+KMDT,Harrisburg Intl,40.1935,-76.7634,US
+KMFE,McAllen Miller Intl,26.1758,-98.2386,US
+KMHT,Manchester-Boston Regional,42.9326,-71.4357,US
+KMOB,Mobile Regional,30.6912,-88.2428,US
+KMSN,Dane County Regional (Madison),43.1399,-89.3375,US
+KOKC,Will Rogers World (Oklahoma City),35.3931,-97.6007,US
+KOMA,Eppley Airfield (Omaha),41.3032,-95.8941,US
+KPBI,Palm Beach Intl,26.6832,-80.0956,US
+KPNS,Pensacola Intl,30.4734,-87.1866,US
+KPVD,T F Green Intl (Providence),41.7267,-71.4284,US
+KRIC,Richmond Intl,37.5052,-77.3197,US
+KRNO,Reno-Tahoe Intl,39.4991,-119.7681,US
+KROC,Greater Rochester Intl,43.1189,-77.6724,US
+KSAV,Savannah/Hilton Head Intl,32.1276,-81.2021,US
+KSGF,Springfield-Branson Natl,37.2457,-93.3886,US
+KSHV,Shreveport Regional,32.4466,-93.8256,US
+KSPI,Abraham Lincoln Capital (Springfield IL),39.8441,-89.6780,US
+KSRQ,Sarasota/Bradenton Intl,27.3954,-82.5544,US
+KSYR,Syracuse Hancock Intl,43.1112,-76.1063,US
+KTLH,Tallahassee Intl,30.3965,-84.3503,US
+KTOL,Toledo Express,41.5868,-83.8078,US
+KTUL,Tulsa Intl,36.1984,-95.8881,US
+KTYS,McGhee Tyson (Knoxville),35.8110,-83.9940,US
+KVPS,Destin-Fort Walton Beach,30.4832,-86.5254,US
+KABE,Lehigh Valley Intl (Allentown),40.6521,-75.4408,US
+KACT,Waco Regional,31.6113,-97.2305,US
+KAGS,Augusta Regional,33.3699,-81.9645,US
+KALB,Albany Intl,42.7483,-73.8017,US
+KAMA,Rick Husband Amarillo Intl,35.2194,-101.7059,US
+KAVL,Asheville Regional,35.4362,-82.5418,US
+KBGR,Bangor Intl,44.8074,-68.8281,US
+KBIL,Billings Logan Intl,45.8077,-108.5430,US
+KBIS,Bismarck Municipal,46.7727,-100.7461,US
+KBOI,Boise Air Terminal,43.5644,-116.2228,US
+KBPT,Jack Brooks Regional (Beaumont),29.9508,-94.0207,US
+KBRO,Brownsville/South Padre Island Intl,25.9068,-97.4259,US
+KBTM,Bert Mooney Airport (Butte),45.9548,-112.4972,US
+KBZN,Bozeman Yellowstone Intl,45.7772,-111.1530,US
+KCAE,Columbia Metropolitan,33.9388,-81.1195,US
+KCID,Eastern Iowa (Cedar Rapids),41.8847,-91.7108,US
+KCMH,John Glenn Columbus Intl,39.9980,-82.8919,US
+KCOU,Columbia Regional,38.8181,-92.2196,US
+KCRW,Yeager (Charleston WV),38.3731,-81.5933,US
+KCSG,Columbus Metropolitan (GA),32.5163,-84.9389,US
+KDAB,Daytona Beach Intl,29.1799,-81.0581,US
+KDRO,Durango-La Plata County,37.1515,-107.7538,US
+KERI,Erie Intl,42.0831,-80.1762,US
+KEVV,Evansville Regional,38.0370,-87.5324,US
+KFAR,Hector Intl (Fargo),46.9207,-96.8158,US
+KFCA,Glacier Park Intl (Kalispell),48.3105,-114.2560,US
+KFLG,Flagstaff Pulliam,35.1385,-111.6712,US
+KFNT,Bishop Intl (Flint),42.9655,-83.7436,US
+KGEG,Spokane Intl,47.6199,-117.5338,US
+KGJT,Grand Junction Regional,39.1224,-108.5267,US
+KGPT,Gulfport-Biloxi Intl,30.4073,-89.0701,US
+KGTF,Great Falls Intl,47.4820,-111.3707,US
+KHLN,Helena Regional,46.6068,-111.9827,US
+KHRL,Valley Intl (Harlingen),26.2285,-97.6544,US
+KHTS,Tri-State/Milton J Ferguson (Huntington),38.3667,-82.5580,US
+KIDA,Idaho Falls Regional,43.5146,-112.0702,US
+KILE,Skylark Field (Killeen),31.0858,-97.6865,US
+KJAC,Jackson Hole,43.6073,-110.7378,US
+KLAN,Capital Region Intl (Lansing),42.7787,-84.5874,US
+KLCH,Lake Charles Regional,30.1261,-93.2234,US
+KLFT,Lafayette Regional,30.2053,-91.9876,US
+KLNK,Lincoln Airport,40.8510,-96.7592,US
+KLRD,Laredo Intl,27.5438,-99.4617,US
+KMAF,Midland Intl Air and Space Port,31.9425,-102.2019,US
+KMBS,MBS Intl (Saginaw),43.5329,-84.0796,US
+KMEI,Key Field (Meridian),32.3326,-88.7519,US
+KMFR,Rogue Valley Intl-Medford,42.3742,-122.8735,US
+KMGM,Montgomery Regional,32.3006,-86.3940,US
+KMLI,Quad City Intl (Moline),41.4485,-90.5075,US
+KMOT,Minot Intl,48.2594,-101.2803,US
+KMYR,Myrtle Beach Intl,33.6797,-78.9283,US
+KOFF,Offutt AFB,41.1184,-95.9125,US
+KPAH,Barkley Regional (Paducah),37.0603,-88.7738,US
+KPIE,St Pete-Clearwater Intl,27.9102,-82.6874,US
+KPIT,Pittsburgh Intl,40.4915,-80.2329,US
+KPWM,Portland Intl Jetport (Maine),43.6462,-70.3093,US
+KRAP,Rapid City Regional,44.0453,-103.0574,US
+KRDM,Redmond Municipal,44.2541,-121.1500,US
+KROA,Roanoke-Blacksburg Regional,37.3255,-79.9754,US
+KRST,Rochester Intl (MN),43.9083,-92.5000,US
+KSBP,San Luis Obispo County Regional,35.2368,-120.6424,US
+KSGF,Springfield-Branson Natl,37.2457,-93.3886,US
+KSJT,San Angelo Regional,31.3577,-100.4963,US
+KSPS,Sheppard AFB/Wichita Falls Muni,33.9888,-98.4919,US
+KSTC,St Cloud Regional,45.5466,-94.0599,US
+KSUX,Sioux Gateway (Sioux City),42.4026,-96.3844,US
+KTEX,Telluride Regional,37.9538,-107.9085,US
+KTXK,Texarkana Regional,33.4537,-93.9910,US
+KTWF,Magic Valley Regional (Twin Falls),42.4818,-114.4877,US
+KVCT,Victoria Regional,28.8526,-96.9185,US
+KWRI,McGuire AFB (Wrightstown),40.0156,-74.5937,US
+CYEG,Edmonton Intl,53.3097,-113.5800,CA
+CYHZ,Halifax Stanfield Intl,44.8808,-63.5085,CA
+CYMX,Montreal Mirabel Intl,45.6795,-74.0387,CA
+CYOW,Ottawa Macdonald-Cartier Intl,45.3225,-75.6692,CA
+CYQB,Quebec City Jean Lesage Intl,46.7911,-71.3933,CA
+CYUL,Montreal Pierre Elliott Trudeau Intl,45.4706,-73.7408,CA
+CYVR,Vancouver Intl,49.1947,-123.1839,CA
+CYWG,Winnipeg James Armstrong Richardson Intl,49.9100,-97.2399,CA
+CYXE,Saskatoon John G Diefenbaker Intl,52.1708,-106.6997,CA
+CYYC,Calgary Intl,51.1139,-114.0203,CA
+CYYZ,Toronto Pearson Intl,43.6772,-79.6306,CA
+MMMX,Mexico City Intl,19.4363,-99.0721,MX
+MMMY,Monterrey Intl,25.7785,-100.1069,MX
+MMGL,Don Miguel Hidalgo y Costilla Intl (Guadalajara),20.5218,-103.3111,MX
+MMTJ,General Abelardo L Rodriguez Intl (Tijuana),32.5411,-116.9700,MX
+MMUN,Cancun Intl,21.0365,-86.8771,MX
+EGLL,London Heathrow,51.4706,-0.4619,GB
+EGKK,London Gatwick,51.1481,-0.1903,GB
+EGSS,London Stansted,51.8850,0.2350,GB
+EHAM,Amsterdam Schiphol,52.3086,4.7639,NL
+EDDF,Frankfurt am Main,50.0333,8.5706,DE
+EDDM,Munich,48.3538,11.7861,DE
+LFPG,Paris Charles de Gaulle,49.0097,2.5479,FR
+LEMD,Madrid Barajas,40.4936,-3.5668,ES
+LIRF,Rome Fiumicino,41.8003,12.2389,IT
+LSZH,Zurich,47.4647,8.5492,CH
+EKCH,Copenhagen Kastrup,55.6180,12.6560,DK
+ENGM,Oslo Gardermoen,60.1939,11.1004,NO
+ESSA,Stockholm Arlanda,59.6519,17.9186,SE
+EFHK,Helsinki Vantaa,60.3172,24.9633,FI
+LPPT,Lisbon Humberto Delgado,38.7742,-9.1342,PT
+LOWW,Vienna Intl,48.1103,16.5697,AT
+EPWA,Warsaw Chopin,52.1657,20.9671,PL
+LKPR,Prague Vaclav Havel,50.1008,14.2600,CZ
+LHBP,Budapest Ferenc Liszt,47.4369,19.2556,HU
+LTFM,Istanbul,41.2753,28.7519,TR
+OMDB,Dubai Intl,25.2528,55.3644,AE
+VHHH,Hong Kong Intl,22.3089,113.9148,HK
+RJTT,Tokyo Haneda,35.5533,139.7811,JP
+RKSI,Incheon Intl,37.4602,126.4407,KR
+WSSS,Singapore Changi,1.3502,103.9944,SG
+YSSY,Sydney Kingsford Smith,-33.9461,151.1772,AU
+YMML,Melbourne Tullamarine,-37.6733,144.8433,AU
+NZAA,Auckland,-37.0082,174.7917,NZ
+SBGR,Sao Paulo Guarulhos,-23.4356,-46.4731,BR
+SCEL,Santiago Arturo Merino Benitez,-33.3930,-70.7858,CL
+SAEZ,Buenos Aires Ezeiza,-34.8222,-58.5358,AR

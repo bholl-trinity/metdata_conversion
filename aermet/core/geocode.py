@@ -11,7 +11,8 @@ import csv
 import json
 import math
 import os
-import requests
+
+from .http import get as http_get
 
 # Bundled airport database path (relative to this file)
 _DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
@@ -30,7 +31,7 @@ def geocode_address(address):
         'addressdetails': 1,
     }
     headers = {'User-Agent': 'AERMET-Automation-Tool/1.0'}
-    resp = requests.get(url, params=params, headers=headers, timeout=15)
+    resp = http_get(url, params=params, headers=headers, timeout=15)
     resp.raise_for_status()
     results = resp.json()
     if not results:
@@ -108,7 +109,7 @@ def reverse_geocode(lat, lon):
     params = {'lat': lat, 'lon': lon, 'format': 'json', 'zoom': 3}
     headers = {'User-Agent': 'AERMET-Automation-Tool/1.0'}
     try:
-        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        resp = http_get(url, params=params, headers=headers, timeout=15)
         resp.raise_for_status()
         data = resp.json()
         cc = data.get('address', {}).get('country_code', '').upper()

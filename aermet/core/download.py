@@ -6,6 +6,8 @@ and 1-minute ASOS data from NCEI.
 import os
 import requests
 
+from .http import get as http_get
+
 from .ghcnh_to_isd import convert_ghcnh_file
 from .igra import download_igra_data, trim_igra_to_years
 
@@ -36,7 +38,7 @@ def download_ghcnh(station_id, output_dir, progress_cb=None):
 
     output_path = os.path.join(output_dir, filename)
 
-    resp = requests.get(url, timeout=300, stream=True)
+    resp = http_get(url, timeout=300, stream=True)
     resp.raise_for_status()
 
     total = int(resp.headers.get('content-length', 0))
@@ -143,7 +145,7 @@ def download_one_minute_asos(station_wban, year, output_dir, progress_cb=None):
         progress_cb('downloading', f'Downloading 1-min ASOS for WBAN {wban}, year {year}...')
 
     try:
-        resp = requests.get(url, timeout=120)
+        resp = http_get(url, timeout=120)
         if resp.status_code == 404:
             if progress_cb:
                 progress_cb('skipped', f'No 1-min data available for WBAN {wban}, {year}')

@@ -13,7 +13,8 @@ This module downloads full-history IGRA files and trims them to years of interes
 
 import os
 import re
-import requests
+
+from .http import get as http_get
 
 # NCEI IGRA data archive base URL
 IGRA_DATA_URL = "https://www.ncei.noaa.gov/data/integrated-global-radiosonde-archive/access/data-por"
@@ -22,7 +23,7 @@ IGRA_STATION_LIST_URL = "https://www.ncei.noaa.gov/data/integrated-global-radios
 
 def download_igra_station_list(output_path):
     """Download the IGRA station inventory file."""
-    resp = requests.get(IGRA_STATION_LIST_URL, timeout=60)
+    resp = http_get(IGRA_STATION_LIST_URL, timeout=60)
     resp.raise_for_status()
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(resp.text)
@@ -88,7 +89,7 @@ def download_igra_data(station_id, output_path, progress_cb=None):
     if progress_cb:
         progress_cb('downloading', f'Downloading IGRA data for {station_id}...')
 
-    resp = requests.get(url, timeout=300, stream=True)
+    resp = http_get(url, timeout=300, stream=True)
     resp.raise_for_status()
 
     # It's a zip file, save and extract
