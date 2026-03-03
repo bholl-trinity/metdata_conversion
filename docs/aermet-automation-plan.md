@@ -134,6 +134,23 @@ metdata_conversion/
 
 **User action:** Select preferred surface and upper air stations (or accept defaults)
 
+**Station coordinate refinement (surface station):**
+AERSURFACE requires high-precision station coordinates. The official coordinates
+in station inventories are often not accurate enough. After the user selects
+their preferred surface station:
+1. The official station coordinates are displayed on an interactive satellite
+   imagery map (Google Maps or similar) embedded in the UI.
+2. A draggable marker is placed at the official coordinates.
+3. The user visually locates the actual station (e.g., the anemometer mast or
+   instrument cluster on the airfield) and drags the marker to that position.
+4. The user clicks an **"Update Station Coordinates"** button.
+5. The refined lat/lon replaces the official coordinates for all downstream
+   processing — specifically AERSURFACE (center point) and the AERMET
+   `SURFACE LOCATION` control file entry.
+
+This is critical for correct AERSURFACE land use classification, since even
+small coordinate errors can shift the analysis into the wrong land use category.
+
 ### Step 3: Data Acquisition
 
 Download data for candidate stations and requested years:
@@ -260,9 +277,14 @@ candidate station/year combinations meet the user's completeness criteria.
 
 ### Step 8: Output & Delivery
 
+**Multi-year output options** (user selects before final run):
+- **Combined**: One .SFC and one .PFL file covering all processed years
+- **Individual**: Separate .SFC/.PFL file pairs for each year
+- **Both**: Both combined and per-year files
+
 **Provide to user:**
-- .SFC file (surface meteorological data for AERMOD)
-- .PFL file (profile/upper air data for AERMOD)
+- .SFC file(s) (surface meteorological data for AERMOD)
+- .PFL file(s) (profile/upper air data for AERMOD)
 - Summary report:
   - Stations used (surface, upper air)
   - Period covered
@@ -314,9 +336,16 @@ with a progress indicator showing which stage they're in.
 
 ### Key UI Features
 - **Progress stepper** at top showing workflow stages
-- **Interactive station map** (optional — could use Leaflet.js with OSM tiles)
+- **Interactive station map** (Leaflet.js with OSM tiles or Google Maps for satellite imagery)
+- **Station coordinate refinement map**: After surface station selection, an
+  embedded satellite map with a draggable marker for visually pinpointing the
+  actual station location. Official coordinates auto-populate; user drags
+  marker to the real position and clicks "Update Station Coordinates." The
+  refined coordinates are used for AERSURFACE and AERMET SURFACE LOCATION.
 - **Real-time log panel** showing backend progress (WebSocket or SSE)
 - **Completeness results table** with color-coded pass/fail
+- **Multi-year output options**: Radio buttons for combined files, per-year
+  files, or both
 - **Download panel** for final output files
 - **Consistent styling** with existing converter app (blues, greens, clean layout)
 
@@ -514,11 +543,10 @@ METPREP
 - ~~GHCNh→ISD converter porting~~: **Best technical approach, implementer's discretion.** Reuse the existing converter logic in whatever way is most practical for the Python backend (likely a Python port of the core JS logic).
 - ~~Onsite data~~: **Deferred to future release.** Not in v1.
 - ~~User distribution~~: **Zero-install, unzip-and-run.** The tool should be distributable as a ZIP that the user extracts and launches — no formal installation, no pip install, no Docker. A batch file launcher starts the Python backend and opens the browser. This means either bundling a Python runtime (via PyInstaller or embedded Python) or requiring Python as the sole prerequisite.
+- ~~Multi-year handling~~: **Per-year processing with flexible output options.** AERMET runs per-year for quality checking. User then chooses output format: (a) combined — one SFC and one PFL file covering all years, (b) individual — separate SFC/PFL files per year, or (c) both. The UI presents this as a simple radio/checkbox choice before the final run.
 
 ### Still Open
-1. **Multi-year handling**: Run AERMET per-year or multi-year in a single run?
-   Per-year is simpler for quality checking but requires more control files.
-2. **IGRA format parsing**: Need to investigate the exact IGRA download format
+1. **IGRA format parsing**: Need to investigate the exact IGRA download format
    and write a parser/converter to FSL format. The existing `uwyo_to_fsl.py`
    handles FSL output but parses Wyoming CSV input — the IGRA input format
    is different.
