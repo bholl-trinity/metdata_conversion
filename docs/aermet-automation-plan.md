@@ -80,8 +80,10 @@ metdata_conversion/
 │   │   ├── aermet_s3.tpl
 │   │   ├── aersurface.tpl
 │   │   └── aerminute.tpl
-│   ├── bin/                    # EPA executables (user-provided or bundled)
-│   │   └── README.md           # Instructions for placing .exe files
+│   ├── bin/                    # EPA executables (bundled with repo)
+│   │   ├── aermet.exe
+│   │   ├── aersurface.exe
+│   │   └── aerminute.exe
 │   └── projects/               # Working directory for project runs
 │       └── .gitkeep
 ├── docs/
@@ -156,13 +158,17 @@ for FSL output formatting, but the download source and input parsing will
 target the IGRA format instead of Wyoming CSV.
 
 **NLCD download strategy:**
-NLCD GeoTIFF files are very large (full CONUS is multiple GB). We need a
-strategy for obtaining just the tiles/area needed:
-- Option A: Use MRLC web services to clip a region around the project site
-- Option B: Download pre-tiled NLCD data and select relevant tiles
-- Option C: Use USGS TNM (The National Map) API to request a geographic subset
-- The download area should cover the AERSURFACE analysis radius (typically 1 km
-  for surface roughness around the surface station location)
+NLCD GeoTIFF files are very large (full CONUS is multiple GB). Approach:
+1. **Preferred: API automation** — Investigate MRLC web services, USGS TNM
+   API, or similar for programmatic download of a clipped geographic area
+   around the project site (AERSURFACE typically needs ~1 km radius around
+   the surface station).
+2. **Fallback: Guided manual download** — If no suitable API exists, generate
+   a URL with pre-loaded coordinate boundaries for nationalmap.gov or the
+   MRLC clearinghouse website so the user can quickly download the right
+   file themselves. Provide clear instructions in the UI.
+3. **Direct upload** — User can always provide their own NLCD GeoTIFF file
+   directly if they already have it.
 
 **Progress reporting:** Show download status in UI for each data file
 
@@ -503,26 +509,22 @@ METPREP
 - ~~Data source for upper air~~: **IGRA**. Confirmed.
 - ~~1-minute data format~~: **TD-3505**. Confirmed.
 - ~~Existing converter integration~~: **Yes** — GHCNh→ISD converter will be used as intermediate step until EPA updates AERMET. Confirmed.
+- ~~EPA executable distribution~~: **Bundle in repo.** AERMET.exe, AERSURFACE.exe, and AERMINUTE.exe will be included in the repository/package so they ship with the tool. No separate install needed.
+- ~~NLCD download strategy~~: **API-first, with guided manual fallback.** We will investigate whether MRLC/USGS/TNM has an API to programmatically download a clipped area. If an API is available, automate it. If not, guide the user through the manual download process — e.g., generate a URL with pre-loaded coordinate boundaries for the relevant website (nationalmap.gov or MRLC clearinghouse) so the user can quickly grab the right file. No AI-driven browser automation (no Claude/Cowork dependency). User can also provide their own NLCD file directly.
 
 ### Still Open
-1. **EPA executable distribution**: Should the tool bundle AERMET/AERSURFACE/
-   AERMINUTE .exe files, or require the user to provide/install them?
-   (EPA distributes these freely but there may be versioning concerns)
-2. **NLCD download strategy**: How to obtain NLCD data for just the area
-   needed? Full CONUS tiles are multiple GB. Need to investigate MRLC web
-   services, USGS TNM API, or pre-tiled downloads.
-3. **Multi-year handling**: Run AERMET per-year or multi-year in a single run?
+1. **Multi-year handling**: Run AERMET per-year or multi-year in a single run?
    Per-year is simpler for quality checking but requires more control files.
-4. **Onsite data**: Should we support onsite meteorological data as an optional
+2. **Onsite data**: Should we support onsite meteorological data as an optional
    input? (AERMET supports it but it adds significant complexity)
-5. **GHCNh→ISD converter porting**: Port the JavaScript converter to Python
+3. **GHCNh→ISD converter porting**: Port the JavaScript converter to Python
    for server-side use, or use a JS runtime (Node.js) as a subprocess?
    Python port is cleaner but requires re-implementation effort.
-6. **IGRA format parsing**: Need to investigate the exact IGRA download format
+4. **IGRA format parsing**: Need to investigate the exact IGRA download format
    and write a parser/converter to FSL format. The existing `uwyo_to_fsl.py`
    handles FSL output but parses Wyoming CSV input — the IGRA input format
    is different.
-7. **User distribution**: How will end users install/run this tool? Options:
+5. **User distribution**: How will end users install/run this tool? Options:
    - Python + pip install with a launch script
    - Bundled executable via PyInstaller
    - Docker container (adds complexity for Windows users)
