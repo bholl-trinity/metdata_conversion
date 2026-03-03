@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AERMET Automation Tool</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+
+<div class="header">
+    <div class="container">
+        <h1>AERMET Automation Tool</h1>
+        <div class="subtitle">Automated EPA AERMET meteorological preprocessing</div>
+    </div>
+</div>
+
+<div class="container">
+    <!-- Step Progress Indicator -->
+    <div class="stepper" id="stepper">
+        <div class="step-item active" data-step="1">
+            <span class="step-num">1</span> Location
+        </div>
+        <div class="step-item" data-step="2">
+            <span class="step-num">2</span> Stations
+        </div>
+        <div class="step-item" data-step="3">
+            <span class="step-num">3</span> Download
+        </div>
+        <div class="step-item" data-step="4">
+            <span class="step-num">4</span> Land Use
+        </div>
+        <div class="step-item" data-step="5">
+            <span class="step-num">5</span> Run AERMET
+        </div>
+        <div class="step-item" data-step="6">
+            <span class="step-num">6</span> Results
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- STEP 1: Location & Setup                                          -->
+    <!-- ================================================================== -->
+    <div class="step-section active" id="step-1">
+        <div class="card">
+            <h2>Project Location</h2>
+            <div class="form-group">
+                <label>Location method</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="loc-method" value="address" checked> Street Address</label>
+                    <label><input type="radio" name="loc-method" value="latlon"> Lat / Lon</label>
+                    <label><input type="radio" name="loc-method" value="airport"> Airport Code</label>
+                </div>
+            </div>
+
+            <div id="loc-address">
+                <div class="form-group">
+                    <label>Address</label>
+                    <input type="text" id="address" placeholder="e.g. 123 Main St, Springfield, IL">
+                </div>
+            </div>
+
+            <div id="loc-latlon" class="hidden">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Latitude</label>
+                        <input type="number" id="lat" step="0.0001" placeholder="39.7817">
+                    </div>
+                    <div class="form-group">
+                        <label>Longitude</label>
+                        <input type="number" id="lon" step="0.0001" placeholder="-89.6501">
+                    </div>
+                </div>
+            </div>
+
+            <div id="loc-airport" class="hidden">
+                <div class="form-group">
+                    <label>ICAO Airport Code</label>
+                    <input type="text" id="icao" placeholder="e.g. KSPI" maxlength="4"
+                           style="width: 120px; text-transform: uppercase;">
+                </div>
+            </div>
+
+            <div id="geocode-result" class="hidden alert alert-success"></div>
+        </div>
+
+        <div class="card">
+            <h2>Data Requirements</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Number of years</label>
+                    <input type="number" id="num-years" value="5" min="1" max="30" style="width:80px">
+                </div>
+                <div class="form-group">
+                    <label>Preferred start year</label>
+                    <input type="number" id="start-year" value="2019" min="1990" max="2025" style="width:100px">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Completeness threshold (%)</label>
+                    <input type="number" id="threshold" value="90" min="50" max="100" style="width:80px">
+                </div>
+                <div class="form-group">
+                    <label>Evaluate completeness</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="basis" value="quarterly" checked> Quarterly</label>
+                        <label><input type="radio" name="basis" value="annual"> Annual</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" id="btn-geocode">Locate &amp; Find Stations</button>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- STEP 2: Station Selection                                         -->
+    <!-- ================================================================== -->
+    <div class="step-section" id="step-2">
+        <div class="card">
+            <h2>Surface Station Selection</h2>
+            <p style="font-size:0.85rem; color:var(--gray-500); margin-bottom:12px;">
+                Select a surface weather station. Closer stations are generally preferred.
+            </p>
+            <div style="overflow-x:auto;">
+                <table class="station-table" id="surface-station-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Name</th>
+                            <th>USAF</th>
+                            <th>WBAN</th>
+                            <th>ICAO</th>
+                            <th>Dist (km)</th>
+                            <th>Years</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Upper Air Station Selection</h2>
+            <p style="font-size:0.85rem; color:var(--gray-500); margin-bottom:12px;">
+                Select an upper air (radiosonde) station. These are sparser; a larger search radius is used.
+            </p>
+            <div style="overflow-x:auto;">
+                <table class="station-table" id="ua-station-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Name</th>
+                            <th>ID</th>
+                            <th>Dist (km)</th>
+                            <th>Elev (m)</th>
+                            <th>Years</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Station coordinate refinement map -->
+        <div class="card" id="coord-refine-card" class="hidden">
+            <h2>Refine Station Coordinates</h2>
+            <p style="font-size:0.85rem; color:var(--gray-500); margin-bottom:12px;">
+                Drag the marker to the exact station location (e.g., the anemometer mast).
+                Accurate coordinates improve AERSURFACE land use classification.
+            </p>
+            <div id="map"></div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Refined Latitude</label>
+                    <input type="number" id="refined-lat" step="0.000001" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Refined Longitude</label>
+                    <input type="number" id="refined-lon" step="0.000001" readonly>
+                </div>
+                <div class="form-group" style="display:flex;align-items:flex-end;">
+                    <button class="btn btn-outline" id="btn-reset-coords">Reset to Official</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-outline" id="btn-back-1">Back</button>
+            <button class="btn btn-primary" id="btn-to-download">Download Data</button>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- STEP 3: Data Download                                             -->
+    <!-- ================================================================== -->
+    <div class="step-section" id="step-3">
+        <div class="card">
+            <h2>Downloading Meteorological Data</h2>
+            <div class="alert alert-info" id="download-status">
+                Preparing to download surface and upper air data...
+            </div>
+            <div class="log-panel" id="download-log"></div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary hidden" id="btn-to-landuse">Continue to Land Use</button>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- STEP 4: Land Use / Surface Characteristics                        -->
+    <!-- ================================================================== -->
+    <div class="step-section" id="step-4">
+        <div class="card" id="landuse-us">
+            <h2>AERSURFACE — Land Use Processing</h2>
+            <div class="alert alert-info">
+                AERSURFACE requires an NLCD GeoTIFF file covering the area around the
+                surface station. You can provide one below or skip to use default values.
+            </div>
+            <div class="form-group">
+                <label>NLCD GeoTIFF file path (on this computer)</label>
+                <input type="text" id="nlcd-path" placeholder="C:\data\nlcd_2021.tif">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Station type</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="airport-flag" value="true" checked> Airport</label>
+                        <label><input type="radio" name="airport-flag" value="false"> Non-Airport</label>
+                    </div>
+                </div>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-outline" id="btn-skip-aersurface">Skip (Use Defaults)</button>
+                <button class="btn btn-primary" id="btn-run-aersurface">Run AERSURFACE</button>
+            </div>
+        </div>
+
+        <div class="card hidden" id="landuse-manual">
+            <h2>Manual Surface Characteristics</h2>
+            <p style="font-size:0.85rem; color:var(--gray-500); margin-bottom:12px;">
+                For non-US sites, enter surface characteristics manually.
+                Select a land use type for reference values, then adjust as needed.
+            </p>
+            <div class="form-group">
+                <label>Land use type (for reference values)</label>
+                <select id="landuse-type">
+                    <option value="">-- Select --</option>
+                    <option value="urban">Urban</option>
+                    <option value="suburban">Suburban</option>
+                    <option value="cultivated">Cultivated / Agricultural</option>
+                    <option value="grassland">Grassland</option>
+                    <option value="forest_deciduous">Forest (Deciduous)</option>
+                    <option value="forest_coniferous">Forest (Coniferous)</option>
+                    <option value="water">Water</option>
+                    <option value="desert">Desert / Barren</option>
+                    <option value="wetland">Wetland</option>
+                    <option value="snow_ice">Snow / Ice</option>
+                </select>
+            </div>
+            <div class="surface-char-grid">
+                <div class="form-group">
+                    <label>Albedo</label>
+                    <input type="number" id="manual-albedo" value="0.18" step="0.01" min="0" max="1">
+                </div>
+                <div class="form-group">
+                    <label>Bowen Ratio</label>
+                    <input type="number" id="manual-bowen" value="1.0" step="0.1" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Surface Roughness (m)</label>
+                    <input type="number" id="manual-roughness" value="0.15" step="0.01" min="0">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Anemometer Height</h2>
+            <div class="form-group">
+                <label>NWS anemometer height (meters)</label>
+                <input type="number" id="anemometer-height" value="10.0" step="0.1" min="1" style="width:100px">
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-outline" id="btn-back-3">Back</button>
+            <button class="btn btn-primary" id="btn-to-aermet">Run AERMET</button>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- STEP 5: AERMET Processing                                         -->
+    <!-- ================================================================== -->
+    <div class="step-section" id="step-5">
+        <div class="card">
+            <h2>Running AERMET</h2>
+
+            <div class="form-group">
+                <label>Output file option</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="output-option" value="both" checked> Both combined &amp; individual</label>
+                    <label><input type="radio" name="output-option" value="combined"> Combined only</label>
+                    <label><input type="radio" name="output-option" value="individual"> Individual per year</label>
+                </div>
+            </div>
+
+            <div class="alert alert-info" id="aermet-status">
+                Preparing to run AERMET stages...
+            </div>
+            <div class="log-panel" id="aermet-log"></div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary hidden" id="btn-to-results">View Results</button>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- STEP 6: Results & Download                                        -->
+    <!-- ================================================================== -->
+    <div class="step-section" id="step-6">
+        <div class="card">
+            <h2>Data Completeness</h2>
+            <div id="completeness-warnings"></div>
+            <table class="completeness-table" id="completeness-table">
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th>Annual</th>
+                        <th>Q1</th>
+                        <th>Q2</th>
+                        <th>Q3</th>
+                        <th>Q4</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Output Files</h2>
+            <div id="output-files" class="download-grid"></div>
+            <div class="btn-row" style="margin-top:16px;">
+                <button class="btn btn-success" id="btn-download-zip">Download All (ZIP)</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Summary</h2>
+            <div id="summary"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

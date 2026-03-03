@@ -1,2 +1,4 @@
 *.fsl
 *.log
+__pycache__/
+*.pyc
