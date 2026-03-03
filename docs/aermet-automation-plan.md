@@ -158,7 +158,7 @@ Download data for candidate stations and requested years:
 | Data Type | Source | Download Format | AERMET Input | Notes |
 |-----------|--------|----------------|--------------|-------|
 | Hourly surface | NCEI | GHCNh (.psv) | ISD (.ish) | Downloaded as GHCNh, then converted to ISD using existing converter logic. When EPA adds native GHCNh support to AERMET, the conversion step is removed. |
-| Upper air | IGRA (Integrated Global Radiosonde Archive) | IGRA format | FSL | Downloaded from NCEI IGRA archive; converted to FSL format for AERMET |
+| Upper air | IGRA (Integrated Global Radiosonde Archive) | IGRA format | IGRA (native) | Downloaded from NCEI IGRA archive; AERMET reads IGRA directly. Full-history file is trimmed to years of interest before use. |
 | 1-minute ASOS | NCEI | TD-3505 | TD-3505 | Only available for US ASOS stations; processed by AERMINUTE |
 | NLCD land use | MRLC/USGS | GeoTIFF | GeoTIFF | Only for US sites; used by AERSURFACE. Need strategy for downloading appropriate tiles based on project location. |
 
@@ -169,10 +169,16 @@ from NCEI → convert to ISD → feed to AERMET. This is a temporary bridge unti
 EPA updates AERMET to read GHCNh directly.
 
 **IGRA upper air pipeline:**
-Upper air data will be downloaded from the IGRA archive at NCEI and converted
-to FSL format for AERMET. The existing `uwyo_to_fsl.py` provides a reference
-for FSL output formatting, but the download source and input parsing will
-target the IGRA format instead of Wyoming CSV.
+AERMET reads IGRA format natively — no conversion needed. The NOAA IGRA
+archive provides full-history files (entire station record, potentially
+decades). The tool will:
+1. Download the full-history IGRA data file for the selected station from NCEI.
+2. Parse the text-based IGRA format (which has clearly readable date headers)
+   to identify the boundaries of the years of interest.
+3. Extract/trim only the needed years into a smaller file.
+4. Feed the trimmed IGRA file directly to AERMET.
+
+This keeps file sizes manageable and AERMET runs fast.
 
 **NLCD download strategy:**
 NLCD GeoTIFF files are very large (full CONUS is multiple GB). Approach:
@@ -383,7 +389,7 @@ JOB
    REPORT    aermet_s1.rpt
 
 UPPERAIR
-   DATA      {upper_air_file}  FSL
+   DATA      {upper_air_file}  IGRA
    EXTRACT   {ua_extract_file}
    AUDIT     UATT UAWS UALR
    QAOUT     {ua_qa_file}
@@ -446,7 +452,8 @@ METPREP
 ### Data sources & availability
 - **Surface (GHCNh)**: Available globally from NCEI; converted to ISD locally
 - **Upper air (IGRA)**: Global coverage via NCEI's Integrated Global
-  Radiosonde Archive
+  Radiosonde Archive; AERMET reads IGRA natively (no format conversion);
+  full-history files trimmed to years of interest
 - **1-minute ASOS (TD-3505)**: US only; not available for all stations or
   all years; processed by AERMINUTE
 - **NLCD**: US only (CONUS); updated roughly every 3 years; needed for
@@ -544,12 +551,11 @@ METPREP
 - ~~Onsite data~~: **Deferred to future release.** Not in v1.
 - ~~User distribution~~: **Zero-install, unzip-and-run.** The tool should be distributable as a ZIP that the user extracts and launches — no formal installation, no pip install, no Docker. A batch file launcher starts the Python backend and opens the browser. This means either bundling a Python runtime (via PyInstaller or embedded Python) or requiring Python as the sole prerequisite.
 - ~~Multi-year handling~~: **Per-year processing with flexible output options.** AERMET runs per-year for quality checking. User then chooses output format: (a) combined — one SFC and one PFL file covering all years, (b) individual — separate SFC/PFL files per year, or (c) both. The UI presents this as a simple radio/checkbox choice before the final run.
+- ~~IGRA format~~: **AERMET reads IGRA natively — no conversion needed.** Download full-history IGRA file from NOAA, trim to years of interest (parse text date headers), feed directly to AERMET. No FSL conversion required.
+- ~~Station coordinate precision~~: **Interactive satellite map for refinement.** After surface station selection, official coordinates populate on a satellite map with a draggable marker. User visually locates the actual station and drags the marker to it, then clicks "Update Station Coordinates." Refined lat/lon is used for AERSURFACE and AERMET SURFACE LOCATION.
 
 ### Still Open
-1. **IGRA format parsing**: Need to investigate the exact IGRA download format
-   and write a parser/converter to FSL format. The existing `uwyo_to_fsl.py`
-   handles FSL output but parses Wyoming CSV input — the IGRA input format
-   is different.
+*No remaining open questions — all major design decisions are resolved.*
 
 ### Deferred to Future Release
 - **Onsite data**: AERMET supports onsite meteorological data as an optional
