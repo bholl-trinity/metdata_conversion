@@ -25,7 +25,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from igra_to_fsl import read_igra_soundings, filter_by_date, write_fsl_sounding, extract_wmo_number
-from igra_fsl_tool import download_igra_data, lookup_station_metadata, trim_igra_to_years, convert_igra_to_fsl_by_year
+from igra_fsl_tool import download_igra_data, lookup_station_metadata, trim_igra_to_years, convert_igra_to_fsl_by_year, resolve_station
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 
@@ -138,11 +138,26 @@ def download_convert():
     start_year = data.get('start_year')
     end_year = data.get('end_year')
 
-    if not station or not name or not start_year or not end_year:
-        return jsonify(error="station, name, start_year, end_year are required"), 400
+    if not station or not start_year or not end_year:
+        return jsonify(error="station, start_year, end_year are required"), 400
 
     start_year = int(start_year)
     end_year = int(end_year)
+
+    # Resolve short call signs (e.g. "DTX") to full IGRA IDs
+    try:
+        igra_id, call_sign = resolve_station(station)
+        station = igra_id
+    except SystemExit:
+        return jsonify(error=f"Could not resolve station '{data.get('station')}' to an IGRA ID. "
+                       "Try the full IGRA ID (e.g. USM00072632)."), 400
+
+    # Auto-derive output name from call sign if not provided
+    if not name:
+        if call_sign:
+            name = call_sign
+        else:
+            name = extract_wmo_number(station)
 
     if end_year < start_year:
         return jsonify(error="end_year must be >= start_year"), 400

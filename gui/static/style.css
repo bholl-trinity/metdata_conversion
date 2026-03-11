@@ -91,6 +91,12 @@ body {
     font-size: 0.85rem;
     margin-bottom: 16px;
 }
+.field-hint {
+    display: block;
+    color: var(--gray-400);
+    font-size: 0.75rem;
+    margin-top: 4px;
+}
 .card .help.warn {
     color: #b45309;
     background: #fffbeb;
