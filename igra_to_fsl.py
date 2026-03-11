@@ -517,16 +517,19 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
         f"{elev_int:7d}{reltime_val:7d}\n"
     )
 
-    # Type 2 (sounding checks — IGRA doesn't provide these)
+    # Type 2 (sounding checks)
+    # Field 4 (col 22-28) = NLEVELS: total lines in sounding (header + data).
+    # AERMET reads this to know how many lines to expect.
+    nlevels_total = num_data_lines + 4  # 4 header lines (254, 1, 2, 3)
     outfile.write(
-        f"      2{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}"
+        f"      2{FSL_MISSING:7d}{FSL_MISSING:7d}{nlevels_total:7d}"
         f"{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}\n"
     )
 
-    # Type 3 (station name, level count, wind units)
+    # Type 3 (station name, STEFLAG, wind units)
     name_str = name[:14]
     outfile.write(
-        f"      3           {name_str:<19s}{num_data_lines:5d}     kt\n"
+        f"      3           {name_str:<19s}{FSL_MISSING:5d}     kt\n"
     )
 
     # ------------------------------------------------------------------
