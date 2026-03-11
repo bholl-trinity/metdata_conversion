@@ -97,7 +97,7 @@
 <body>
     <h1>CD144 Gap Filler</h1>
     <div class="description">
-        <p>Drag and drop a CD144 <strong>.met</strong> file to fill data gaps using nearest-time substitution.
+        <p>Drag and drop a CD144 <strong>.met</strong> or <strong>.FIL</strong> file to fill data gaps using nearest-time substitution.
         For each missing field, the tool searches backward for the most recent hour with the same
         time-of-day that has that field present, and copies the value in. Works for both full-line
         gaps and individual missing fields.</p>
@@ -105,10 +105,10 @@
 
     <div class="drop-zone" id="dropZone">
         <div class="icon">&#128196;</div>
-        <p><strong>Drag & drop a .met file here</strong></p>
+        <p><strong>Drag & drop a .met or .FIL file here</strong></p>
         <p>or click to browse</p>
     </div>
-    <input type="file" id="fileInput" accept=".met">
+    <input type="file" id="fileInput" accept=".met,.FIL,.fil">
 
     <div class="file-info" id="fileInfo">
         <h3>File: <span class="filename" id="fileName"></span></h3>
@@ -197,8 +197,9 @@
 
         // --- Analyze file and show stats ---
         function handleFile(file) {
-            if (!file.name.toLowerCase().endsWith('.met')) {
-                alert('Please select a .met file.');
+            const lowerName = file.name.toLowerCase();
+            if (!lowerName.endsWith('.met') && !lowerName.endsWith('.fil')) {
+                alert('Please select a .met or .FIL file.');
                 return;
             }
             logDiv.innerHTML = '';
@@ -374,7 +375,10 @@
         });
 
         function downloadResult(lines) {
-            const outputName = loadedFile.name.replace(/\.met$/i, '.FIL');
+            // If input is .met, change to .FIL; if already .FIL, keep same name
+            const outputName = loadedFile.name.toLowerCase().endsWith('.met')
+                ? loadedFile.name.replace(/\.met$/i, '.FIL')
+                : loadedFile.name;
             const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
