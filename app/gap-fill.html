@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CD144 Gap Filler</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #27ae60;
+            padding-bottom: 10px;
+        }
+        .description {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #27ae60;
+        }
+        .drop-zone {
+            border: 3px dashed #27ae60;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            background: #e8f8f0;
+            border-color: #1e8449;
+        }
+        .drop-zone p { margin: 5px 0; color: #666; }
+        .drop-zone .icon { font-size: 48px; margin-bottom: 10px; }
+        .file-info {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .file-info h3 { margin-top: 0; }
+        .file-info .filename { font-weight: bold; color: #27ae60; }
+        .file-info .stats { margin: 10px 0; }
+        .file-info .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .file-info .stat-label { color: #666; }
+        .file-info .stat-value { font-weight: bold; }
+        .stat-value.good { color: #27ae60; }
+        .stat-value.bad { color: #e74c3c; }
+        button {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+            display: none;
+        }
+        button:hover { background: #1e8449; }
+        button:disabled { background: #95a5a6; cursor: not-allowed; }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+            white-space: pre-wrap;
+            margin-top: 20px;
+        }
+        .log .info { color: #6a9955; }
+        .log .warn { color: #dcdcaa; }
+        .log .error { color: #f44747; }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+    <h1>CD144 Gap Filler</h1>
+    <div class="description">
+        <p>Drag and drop a CD144 <strong>.met</strong> file to fill data gaps using nearest-time substitution.
+        For each missing field, the tool searches backward for the most recent hour with the same
+        time-of-day that has that field present, and copies the value in. Works for both full-line
+        gaps and individual missing fields.</p>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <div class="icon">&#128196;</div>
+        <p><strong>Drag & drop a .met file here</strong></p>
+        <p>or click to browse</p>
+    </div>
+    <input type="file" id="fileInput" accept=".met">
+
+    <div class="file-info" id="fileInfo">
+        <h3>File: <span class="filename" id="fileName"></span></h3>
+        <div class="stats" id="statsContainer"></div>
+    </div>
+
+    <button id="fillBtn">Fill Gaps &amp; Download .FIL</button>
+    <div class="log" id="log"></div>
+
+    <script>
+    (function() {
+        // CD144 field definitions: { name, start (0-based), length }
+        // Cols 0-12: header (station 5 + year 2 + month 2 + day 2 + hour 2) — never missing
+        // Cols 16-34: always blank spacer (19 chars)
+        // Cols 49-51: always blank spacer (3 chars)
+        // Cols 56-78: always blank padding (23 chars)
+        const FIELDS = [
+            { name: 'Ceiling',    start: 13, len: 3 },
+            { name: 'Dewpoint',   start: 35, len: 3 },
+            { name: 'Wind Dir',   start: 38, len: 2 },
+            { name: 'Wind Speed', start: 40, len: 2 },
+            { name: 'Pressure',   start: 42, len: 4 },
+            { name: 'Temp',       start: 46, len: 3 },
+            { name: 'RH',         start: 52, len: 3 },
+            { name: 'Cloud',      start: 55, len: 1 },
+        ];
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fillBtn = document.getElementById('fillBtn');
+        const logDiv = document.getElementById('log');
+
+        let loadedFile = null;
+
+        // --- Drag & drop / click ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) handleFile(fileInput.files[0]);
+        });
+
+        function log(msg, cls) {
+            logDiv.style.display = 'block';
+            const span = document.createElement('span');
+            span.className = cls || '';
+            span.textContent = msg + '\n';
+            logDiv.appendChild(span);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Extract a field value from a line; returns the raw substring
+        function getField(line, field) {
+            return line.substring(field.start, field.start + field.len);
+        }
+
+        // Check if a field value is blank (all spaces)
+        function isFieldBlank(line, field) {
+            return getField(line, field).trim().length === 0;
+        }
+
+        // Get hour-of-day (0-23) from cols 11-12
+        function getHour(line) {
+            return parseInt(line.substring(11, 13), 10);
+        }
+
+        // Format date from a line for display
+        function fmtDate(line) {
+            return line.substring(7, 9) + '/' + line.substring(9, 11) +
+                   ' h' + line.substring(11, 13);
+        }
+
+        // Splice a field value into a line (fixed-width replacement)
+        function setField(line, field, value) {
+            // Pad/trim value to exact field length
+            const padded = value.padEnd(field.len).substring(0, field.len);
+            return line.substring(0, field.start) + padded +
+                   line.substring(field.start + field.len);
+        }
+
+        // --- Analyze file and show stats ---
+        function handleFile(file) {
+            if (!file.name.toLowerCase().endsWith('.met')) {
+                alert('Please select a .met file.');
+                return;
+            }
+            logDiv.innerHTML = '';
+            logDiv.style.display = 'none';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split(/\r?\n/).filter(l => l.length > 0);
+                loadedFile = { name: file.name, lines: lines };
+
+                const total = lines.length;
+
+                // Count missing fields per type
+                const missingCounts = {};
+                let totalMissingFields = 0;
+                for (const f of FIELDS) missingCounts[f.name] = 0;
+
+                for (const line of lines) {
+                    for (const f of FIELDS) {
+                        if (isFieldBlank(line, f)) {
+                            missingCounts[f.name]++;
+                            totalMissingFields++;
+                        }
+                    }
+                }
+
+                // Count fully blank lines (all fields missing)
+                let fullyBlank = 0;
+                for (const line of lines) {
+                    let allBlank = true;
+                    for (const f of FIELDS) {
+                        if (!isFieldBlank(line, f)) { allBlank = false; break; }
+                    }
+                    if (allBlank) fullyBlank++;
+                }
+
+                // Build stats display
+                const statsDiv = document.getElementById('statsContainer');
+                statsDiv.innerHTML = '';
+
+                function addStat(label, value, cls) {
+                    const row = document.createElement('div');
+                    row.className = 'stat-row';
+                    row.innerHTML = '<span class="stat-label">' + label + '</span>' +
+                        '<span class="stat-value ' + (cls || '') + '">' + value + '</span>';
+                    statsDiv.appendChild(row);
+                }
+
+                addStat('Total hours', total);
+                addStat('Fully blank hours', fullyBlank, fullyBlank > 0 ? 'bad' : 'good');
+
+                for (const f of FIELDS) {
+                    const n = missingCounts[f.name];
+                    if (n > 0) {
+                        addStat(f.name + ' missing', n, 'bad');
+                    }
+                }
+
+                const totalCells = total * FIELDS.length;
+                const pct = ((totalCells - totalMissingFields) / totalCells * 100).toFixed(1);
+                addStat('Field-level completeness', pct + '%', totalMissingFields === 0 ? 'good' : '');
+
+                fileInfo.style.display = 'block';
+                fillBtn.style.display = 'inline-block';
+
+                if (totalMissingFields === 0) {
+                    fillBtn.textContent = 'No gaps \u2014 Download as .FIL';
+                } else {
+                    fillBtn.textContent = 'Fill Gaps & Download .FIL';
+                }
+
+                log('Loaded ' + file.name + ': ' + total + ' hours, ' +
+                    totalMissingFields + ' missing field(s) across ' +
+                    fullyBlank + ' fully blank hour(s)', 'info');
+            };
+            reader.readAsText(file);
+        }
+
+        // --- Fill gaps field by field ---
+        fillBtn.addEventListener('click', function() {
+            if (!loadedFile) return;
+
+            const lines = loadedFile.lines.slice();
+            const total = lines.length;
+            let fillCount = 0;
+            let unfillCount = 0;
+
+            // For each field, process all lines and fill missing values
+            for (const field of FIELDS) {
+                // Find contiguous runs of missing values for this field
+                let i = 0;
+                while (i < total) {
+                    if (!isFieldBlank(lines[i], field)) { i++; continue; }
+
+                    // Found start of a gap for this field
+                    const gapStart = i;
+                    while (i < total && isFieldBlank(lines[i], field)) i++;
+                    const gapEnd = i - 1;
+                    const gapLen = gapEnd - gapStart + 1;
+
+                    const startHour = getHour(lines[gapStart]);
+                    const endHour = getHour(lines[gapEnd]);
+
+                    // Search backward for a donor block of gapLen lines where:
+                    //  - first line has same hour-of-day as gapStart
+                    //  - all gapLen lines have this field present
+                    //  - last line has same hour-of-day as gapEnd
+                    let donor = null;
+
+                    for (let s = gapStart - 1; s >= 0; s--) {
+                        if (getHour(lines[s]) !== startHour) continue;
+                        const candidateEnd = s + gapLen - 1;
+                        if (candidateEnd >= gapStart) continue; // would overlap gap
+                        if (getHour(lines[candidateEnd]) !== endHour) continue;
+                        let ok = true;
+                        for (let j = s; j <= candidateEnd; j++) {
+                            if (isFieldBlank(lines[j], field)) { ok = false; break; }
+                        }
+                        if (ok) { donor = s; break; }
+                    }
+
+                    // Fallback: search forward
+                    if (donor === null) {
+                        for (let s = gapEnd + 1; s < total; s++) {
+                            if (getHour(lines[s]) !== startHour) continue;
+                            const candidateEnd = s + gapLen - 1;
+                            if (candidateEnd >= total) continue;
+                            if (getHour(lines[candidateEnd]) !== endHour) continue;
+                            let ok = true;
+                            for (let j = s; j <= candidateEnd; j++) {
+                                if (isFieldBlank(lines[j], field)) { ok = false; break; }
+                            }
+                            if (ok) { donor = s; break; }
+                        }
+                    }
+
+                    if (donor !== null) {
+                        for (let g = 0; g < gapLen; g++) {
+                            const val = getField(lines[donor + g], field);
+                            lines[gapStart + g] = setField(lines[gapStart + g], field, val);
+                        }
+                        log(field.name + ': filled ' + gapLen + 'h gap at ' +
+                            fmtDate(lines[gapStart]) + ' from donor at ' +
+                            fmtDate(lines[donor]), 'info');
+                        fillCount += gapLen;
+                    } else {
+                        log(field.name + ': UNFILLED ' + gapLen + 'h gap at ' +
+                            fmtDate(lines[gapStart]) + ' — no donor found', 'error');
+                        unfillCount += gapLen;
+                    }
+                }
+            }
+
+            // Final stats
+            log('', '');
+            log('Filled ' + fillCount + ' field-gaps' +
+                (unfillCount > 0 ? ', ' + unfillCount + ' could not be filled' : '') +
+                '.', unfillCount > 0 ? 'warn' : 'info');
+
+            // Verify completeness
+            let remaining = 0;
+            for (const line of lines) {
+                for (const f of FIELDS) {
+                    if (isFieldBlank(line, f)) remaining++;
+                }
+            }
+            const totalCells = total * FIELDS.length;
+            const pct = ((totalCells - remaining) / totalCells * 100).toFixed(1);
+            log('Output completeness: ' + pct + '%', remaining === 0 ? 'info' : 'warn');
+
+            downloadResult(lines);
+        });
+
+        function downloadResult(lines) {
+            const outputName = loadedFile.name.replace(/\.met$/i, '.FIL');
+            const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = outputName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            log('Downloaded: ' + outputName, 'info');
+        }
+    })();
+    </script>
+</body>
+</html>
