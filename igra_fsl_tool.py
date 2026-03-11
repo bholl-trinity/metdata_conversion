@@ -194,9 +194,15 @@ def resolve_station(station_input):
         sys.exit(1)
 
     # Build candidate IGRA ID: USM000<WMO> (standard for US WMO-numbered stations)
-    # Pad WMO to 5 digits for the standard format
-    candidate = f"USM000{int(wmo):05d}"
-    print(f"  Resolved {station_input} -> WMO {wmo} -> IGRA {candidate}")
+    # ISD USAF numbers are 6 digits (WMO + trailing digit, usually "0").
+    # IGRA uses 5-digit WMO numbers, so strip the trailing digit if 6-digit.
+    wmo_digits = str(int(wmo))
+    if len(wmo_digits) == 6:
+        wmo_5 = wmo_digits[:5]
+    else:
+        wmo_5 = wmo_digits
+    candidate = f"USM000{int(wmo_5):05d}"
+    print(f"  Resolved {station_input} -> USAF {wmo} -> WMO {wmo_5} -> IGRA {candidate}")
 
     # Verify the candidate exists in the IGRA station list
     print(f"  Verifying against IGRA station list...")
@@ -216,7 +222,7 @@ def resolve_station(station_input):
             return candidate, call_sign
 
     # Fallback: search all IGRA IDs for this WMO number
-    wmo_pattern = re.compile(rf'M000{int(wmo):05d}$')
+    wmo_pattern = re.compile(rf'M000{int(wmo_5):05d}$')
     for s in igra_stations:
         if wmo_pattern.search(s['id']):
             print(f"  Found: {s['id']} ({s['name']})")
