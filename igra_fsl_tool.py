@@ -40,6 +40,7 @@ from datetime import datetime
 
 try:
     import requests
+    from requests.exceptions import SSLError
 except ImportError:
     print("The 'requests' library is required. Install with: pip install requests")
     sys.exit(1)
@@ -74,6 +75,26 @@ except ImportError:
     SSL_VERIFY = True
 
 
+def _ssl_get(url, **kwargs):
+    """
+    Wrapper around requests.get() that handles SSL certificate errors.
+
+    First attempts the request with the configured CA bundle (certifi or
+    system default).  If that fails with an SSL error, retries with
+    verification disabled and warns the user.
+    """
+    kwargs.setdefault('verify', SSL_VERIFY)
+    try:
+        return requests.get(url, **kwargs)
+    except SSLError:
+        print("  WARNING: SSL certificate verification failed.")
+        print("  Retrying without certificate verification.")
+        print("  Tip: install or update the 'certifi' package to fix this permanently:")
+        print("       pip install --upgrade certifi")
+        kwargs['verify'] = False
+        return requests.get(url, **kwargs)
+
+
 # ============================================================================
 # IGRA DOWNLOAD
 # ============================================================================
@@ -87,7 +108,7 @@ def download_igra_data(station_id, output_path):
     url = f"{IGRA_DATA_URL}/{station_id}-data.txt.zip"
     print(f"  Downloading {url}")
 
-    resp = requests.get(url, timeout=300, verify=SSL_VERIFY)
+    resp = _ssl_get(url, timeout=300)
     resp.raise_for_status()
 
     zip_data = io.BytesIO(resp.content)
@@ -112,7 +133,7 @@ def lookup_station_metadata(station_id):
     """
     print(f"  Looking up station metadata for {station_id}...")
     try:
-        resp = requests.get(IGRA_STATION_LIST_URL, timeout=60, verify=SSL_VERIFY)
+        resp = _ssl_get(IGRA_STATION_LIST_URL, timeout=60)
         resp.raise_for_status()
     except Exception as e:
         print(f"  Warning: Could not download station list: {e}")
