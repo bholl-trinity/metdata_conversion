@@ -16,24 +16,30 @@ Output file naming convention:
   Combined:   <ID><YY1><YY2>.rao  e.g., IAD2125.rao (2021-2025)
 
 Usage:
+  # Use a 3-letter call sign — the tool looks up the full IGRA ID for you:
+  python igra_fsl_tool.py --station DTX --start-year 2021 --end-year 2025
+
+  # Or provide the full IGRA station ID directly:
   python igra_fsl_tool.py --station USM00072451 --name IAD \\
       --start-year 2021 --end-year 2025
 
   # With station metadata overrides:
-  python igra_fsl_tool.py --station USM00072451 --name IAD \\
+  python igra_fsl_tool.py --station IAD \\
       --start-year 2021 --end-year 2025 \\
       --wban 93734 --lat 38.98 --lon -77.48 --elev 93.0
 
   # Specify output directory:
-  python igra_fsl_tool.py --station USM00072451 --name IAD \\
+  python igra_fsl_tool.py --station DTX \\
       --start-year 2022 --end-year 2022 --outdir ./output
 
 Requires: requests (pip install requests)
 """
 
 import argparse
+import csv
 import io
 import os
+import re
 import sys
 import zipfile
 from datetime import datetime
@@ -66,6 +72,7 @@ IGRA_STATION_LIST_URL = (
     "https://www.ncei.noaa.gov/data/integrated-global-radiosonde-archive"
     "/doc/igra2-station-list.txt"
 )
+ISD_HISTORY_URL = "https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv"
 
 # Try to use certifi for SSL if available
 try:
@@ -93,6 +100,131 @@ def _ssl_get(url, **kwargs):
         print("       pip install --upgrade certifi")
         kwargs['verify'] = False
         return requests.get(url, **kwargs)
+
+
+# ============================================================================
+# STATION RESOLUTION — look up full IGRA ID from a short call sign
+# ============================================================================
+
+def _parse_igra_station_list(text):
+    """
+    Parse the IGRA station list text into a list of dicts.
+
+    Fixed-width format (from NCEI docs):
+      Col  1-11:  station ID (e.g., USM00072632)
+      Col 13-20:  latitude
+      Col 22-30:  longitude
+      Col 32-37:  elevation (m)
+      Col 39-40:  state (US only)
+      Col 42-71:  station name
+      Col 73-76:  first year
+      Col 78-81:  last year
+    """
+    stations = []
+    for line in text.splitlines():
+        if len(line.strip()) < 80:
+            continue
+        try:
+            stations.append({
+                'id': line[0:11].strip(),
+                'lat': float(line[12:20].strip()),
+                'lon': float(line[21:30].strip()),
+                'elev': float(line[31:37].strip()),
+                'state': line[38:40].strip(),
+                'name': line[41:71].strip(),
+                'first_year': int(line[72:76].strip()),
+                'last_year': int(line[77:81].strip()),
+            })
+        except (ValueError, IndexError):
+            continue
+    return stations
+
+
+def _lookup_wmo_by_icao(icao_code):
+    """
+    Download the ISD station history CSV and find the WMO (USAF) number
+    for a given ICAO code.  Returns the WMO number string or None.
+    """
+    # Normalize: add 'K' prefix for 3-letter US codes
+    icao = icao_code.upper()
+    if len(icao) == 3:
+        icao = 'K' + icao
+
+    print(f"  Looking up ICAO code {icao} in ISD station history...")
+    try:
+        resp = _ssl_get(ISD_HISTORY_URL, timeout=60)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"  Warning: Could not download ISD station history: {e}")
+        return None
+
+    reader = csv.DictReader(io.StringIO(resp.text))
+    for row in reader:
+        if row.get('ICAO', '').strip() == icao:
+            usaf = row.get('USAF', '').strip()
+            if usaf and usaf != '999999':
+                return usaf
+    return None
+
+
+def resolve_station(station_input):
+    """
+    Resolve a station identifier to a full IGRA station ID.
+
+    Accepts:
+      - Full IGRA ID (e.g., USM00072632) — returned as-is
+      - Short call sign (e.g., DTX or KDTX) — looked up via ISD → WMO → IGRA
+
+    Returns (igra_id, call_sign) where call_sign is the short identifier
+    (useful as a default for --name), or (igra_id, None) for direct IDs.
+    """
+    station_input = station_input.strip()
+
+    # If it already looks like a full IGRA ID, use it directly
+    if re.match(r'^[A-Z]{2}[A-Z0-9]{9}$', station_input.upper()) and len(station_input) == 11:
+        return station_input.upper(), None
+
+    # Short identifier — try to resolve via ISD ICAO → WMO → IGRA
+    call_sign = station_input.upper().lstrip('K') if len(station_input) == 4 else station_input.upper()
+
+    wmo = _lookup_wmo_by_icao(station_input)
+    if not wmo:
+        print(f"  Error: Could not find WMO number for '{station_input}'.")
+        print(f"  Try providing the full IGRA station ID (e.g., USM00072632).")
+        sys.exit(1)
+
+    # Build candidate IGRA ID: USM000<WMO> (standard for US WMO-numbered stations)
+    # Pad WMO to 5 digits for the standard format
+    candidate = f"USM000{int(wmo):05d}"
+    print(f"  Resolved {station_input} -> WMO {wmo} -> IGRA {candidate}")
+
+    # Verify the candidate exists in the IGRA station list
+    print(f"  Verifying against IGRA station list...")
+    try:
+        resp = _ssl_get(IGRA_STATION_LIST_URL, timeout=60)
+        resp.raise_for_status()
+        igra_stations = _parse_igra_station_list(resp.text)
+    except Exception as e:
+        print(f"  Warning: Could not verify against IGRA station list: {e}")
+        print(f"  Proceeding with {candidate} (unverified)")
+        return candidate, call_sign
+
+    # Exact match
+    for s in igra_stations:
+        if s['id'] == candidate:
+            print(f"  Confirmed: {candidate} ({s['name']})")
+            return candidate, call_sign
+
+    # Fallback: search all IGRA IDs for this WMO number
+    wmo_pattern = re.compile(rf'M000{int(wmo):05d}$')
+    for s in igra_stations:
+        if wmo_pattern.search(s['id']):
+            print(f"  Found: {s['id']} ({s['name']})")
+            return s['id'], call_sign
+
+    print(f"  Warning: WMO {wmo} not found in IGRA station list.")
+    print(f"  Proceeding with {candidate} (may not have data)")
+    return candidate, call_sign
 
 
 # ============================================================================
@@ -274,9 +406,9 @@ def main():
         description="Download IGRA upper air data and convert to FSL format"
     )
     parser.add_argument("--station", required=True,
-                        help="IGRA station ID (e.g., USM00072451)")
-    parser.add_argument("--name", required=True,
-                        help="3-letter station ID for output filenames (e.g., IAD)")
+                        help="IGRA station ID (e.g., USM00072451) or call sign (e.g., DTX)")
+    parser.add_argument("--name", default=None,
+                        help="3-letter station ID for output filenames (default: from call sign or IGRA ID)")
     parser.add_argument("--start-year", type=int, required=True,
                         help="First year to process")
     parser.add_argument("--end-year", type=int, required=True,
@@ -303,6 +435,17 @@ def main():
         sys.exit(1)
 
     os.makedirs(args.outdir, exist_ok=True)
+
+    # Resolve short call signs (e.g., "DTX") to full IGRA IDs
+    igra_id, call_sign = resolve_station(args.station)
+    args.station = igra_id
+
+    # Default --name to the call sign if provided, otherwise derive from IGRA ID
+    if args.name is None:
+        if call_sign:
+            args.name = call_sign
+        else:
+            args.name = extract_wmo_number(igra_id)
 
     print("=" * 70)
     print("IGRA to FSL Converter")
