@@ -518,12 +518,29 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
     )
 
     # Type 2 (sounding checks)
-    # Field 4 (col 22-28) = NLEVELS: total lines in sounding (header + data).
-    # AERMET reads this to know how many lines to expect.
+    # FSL format fields (all 7i7):
+    #   Col  8-14: HYDRO  — pressure (mb*10) where hydrostatic check passed
+    #   Col 15-21: MXWD   — pressure (mb*10) of max wind level
+    #   Col 22-28: TROPL  — pressure (mb*10) of tropopause level
+    #   Col 29-35: LINES  — total lines in sounding (4 headers + data lines)
+    #   Col 36-42: TINDEX — tropopause estimate indicator
+    #   Col 43-49: SOURCE — data source (0=NCDC, 1=AES, 2=NSSFC, 3=GTS, 4=merge)
     nlevels_total = num_data_lines + 4  # 4 header lines (254, 1, 2, 3)
+
+    # Extract MXWD (max wind pressure) and TROPL (tropopause pressure)
+    # from the FSL lines we already built.
+    mxwd_10 = FSL_MISSING
+    tropl_10 = FSL_MISSING
+    if max_wspd_lev is not None:
+        mxwd_10 = int(round(max_wspd_lev['pres_pa'] / 10.0))
+    for fl in fsl_lines:
+        if fl[0] == 7:  # tropopause line
+            tropl_10 = fl[1]
+            break
+
     outfile.write(
-        f"      2{FSL_MISSING:7d}{FSL_MISSING:7d}{nlevels_total:7d}"
-        f"{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}\n"
+        f"      2{FSL_MISSING:7d}{mxwd_10:7d}{tropl_10:7d}"
+        f"{nlevels_total:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}\n"
     )
 
     # Type 3 (station name, STEFLAG, wind units)
