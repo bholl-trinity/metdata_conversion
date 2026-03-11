@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upper Air to FSL Converter</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+    <div class="container">
+        <h1>Upper Air to FSL Converter</h1>
+        <div class="subtitle">Convert IGRA v2 or Wyoming upper air data to FSL format for AERMET</div>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- Tab bar -->
+    <div class="tabs">
+        <button class="tab active" data-tab="upload">IGRA File Upload</button>
+        <button class="tab" data-tab="download">IGRA Download</button>
+        <button class="tab" data-tab="wyoming">Wyoming Archive</button>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- Tab 1: Upload IGRA file and convert -->
+    <!-- ================================================================= -->
+    <div class="tab-panel active" id="panel-upload">
+        <div class="card">
+            <h2>Convert IGRA v2 File to FSL</h2>
+            <p class="help">Upload an IGRA v2 data file and convert it to FSL format.</p>
+
+            <form id="upload-form">
+                <div class="form-group">
+                    <label>IGRA v2 File <span class="required">*</span></label>
+                    <input type="file" name="file" id="igra-file" accept=".txt,.dat" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" name="start_date" id="upload-start">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" name="end_date" id="upload-end">
+                    </div>
+                </div>
+
+                <details class="station-opts">
+                    <summary>Station Metadata (optional)</summary>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Station Name</label>
+                            <input type="text" name="name" placeholder="e.g. IAD" maxlength="14">
+                        </div>
+                        <div class="form-group">
+                            <label>WBAN</label>
+                            <input type="text" name="wban" placeholder="99999">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Latitude</label>
+                            <input type="number" name="lat" step="0.0001" placeholder="38.98">
+                        </div>
+                        <div class="form-group">
+                            <label>Longitude</label>
+                            <input type="number" name="lon" step="0.0001" placeholder="-77.48">
+                        </div>
+                        <div class="form-group">
+                            <label>Elevation (m)</label>
+                            <input type="number" name="elev" step="0.1" placeholder="93.0">
+                        </div>
+                    </div>
+                </details>
+
+                <button type="submit" class="btn btn-primary">Convert to FSL</button>
+            </form>
+
+            <div id="upload-result" class="result hidden"></div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- Tab 2: Download from NCEI + convert -->
+    <!-- ================================================================= -->
+    <div class="tab-panel" id="panel-download">
+        <div class="card">
+            <h2>Download IGRA Data &amp; Convert to FSL</h2>
+            <p class="help">Download upper air data from NCEI's IGRA archive and convert to FSL.</p>
+
+            <form id="download-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>IGRA Station ID <span class="required">*</span></label>
+                        <input type="text" id="dl-station" placeholder="USM00072451" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Output Name <span class="required">*</span></label>
+                        <input type="text" id="dl-name" placeholder="IAD" maxlength="14" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Year <span class="required">*</span></label>
+                        <input type="number" id="dl-start-year" placeholder="2021" min="1900" max="2099" required>
+                    </div>
+                    <div class="form-group">
+                        <label>End Year <span class="required">*</span></label>
+                        <input type="number" id="dl-end-year" placeholder="2025" min="1900" max="2099" required>
+                    </div>
+                </div>
+
+                <details class="station-opts">
+                    <summary>Station Metadata Overrides (optional)</summary>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>WBAN</label>
+                            <input type="text" id="dl-wban" placeholder="auto">
+                        </div>
+                        <div class="form-group">
+                            <label>Latitude</label>
+                            <input type="number" id="dl-lat" step="0.0001" placeholder="auto">
+                        </div>
+                        <div class="form-group">
+                            <label>Longitude</label>
+                            <input type="number" id="dl-lon" step="0.0001" placeholder="auto">
+                        </div>
+                        <div class="form-group">
+                            <label>Elevation (m)</label>
+                            <input type="number" id="dl-elev" step="0.1" placeholder="auto">
+                        </div>
+                    </div>
+                </details>
+
+                <button type="submit" class="btn btn-primary">Download &amp; Convert</button>
+            </form>
+
+            <div id="download-result" class="result hidden"></div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- Tab 3: Wyoming archive download + convert -->
+    <!-- ================================================================= -->
+    <div class="tab-panel" id="panel-wyoming">
+        <div class="card">
+            <h2>Wyoming Archive to FSL</h2>
+            <p class="help">Download soundings from the University of Wyoming archive and convert to FSL.</p>
+            <p class="help warn">Note: Wyoming's server is rate-limited. Large date ranges will take a long time.</p>
+
+            <form id="wyoming-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>WMO Station Number <span class="required">*</span></label>
+                        <input type="text" id="wy-station" placeholder="72403" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Date <span class="required">*</span></label>
+                        <input type="date" id="wy-start" required>
+                    </div>
+                    <div class="form-group">
+                        <label>End Date <span class="required">*</span></label>
+                        <input type="date" id="wy-end" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Sounding Hour (UTC)</label>
+                        <select id="wy-hour">
+                            <option value="12" selected>12Z only</option>
+                            <option value="0">00Z only</option>
+                            <option value="both">Both 00Z and 12Z</option>
+                        </select>
+                    </div>
+                </div>
+
+                <details class="station-opts">
+                    <summary>Station Metadata (optional)</summary>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Station Name</label>
+                            <input type="text" id="wy-name" placeholder="e.g. IAD" maxlength="14">
+                        </div>
+                        <div class="form-group">
+                            <label>WBAN</label>
+                            <input type="text" id="wy-wban" placeholder="99999">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Latitude</label>
+                            <input type="number" id="wy-lat" step="0.0001">
+                        </div>
+                        <div class="form-group">
+                            <label>Longitude</label>
+                            <input type="number" id="wy-lon" step="0.0001">
+                        </div>
+                        <div class="form-group">
+                            <label>Elevation (m)</label>
+                            <input type="number" id="wy-elev" step="0.1">
+                        </div>
+                    </div>
+                </details>
+
+                <button type="submit" class="btn btn-primary">Download &amp; Convert</button>
+            </form>
+
+            <div id="wyoming-result" class="result hidden"></div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// =====================================================================
+// Tab switching
+// =====================================================================
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    });
+});
+
+// =====================================================================
+// Helpers
+// =====================================================================
+function showResult(el, html, isError) {
+    el.innerHTML = html;
+    el.className = 'result' + (isError ? ' error' : ' success');
+    el.classList.remove('hidden');
+}
+
+function fileLink(jobId, filename) {
+    return `<a href="/api/download/${jobId}/${filename}" class="file-link">${filename}</a>`;
+}
+
+// =====================================================================
+// Tool 1: File upload conversion
+// =====================================================================
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const resultEl = document.getElementById('upload-result');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Converting...';
+    resultEl.classList.add('hidden');
+
+    const formData = new FormData(e.target);
+
+    try {
+        const resp = await fetch('/api/convert-file', { method: 'POST', body: formData });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            showResult(resultEl, `<strong>Error:</strong> ${data.error}`, true);
+        } else {
+            showResult(resultEl, `
+                <strong>Conversion complete!</strong><br>
+                Soundings written: ${data.soundings_written}<br>
+                Soundings skipped: ${data.soundings_skipped}<br>
+                <div class="file-list">${fileLink(data.job_id, data.filename)}</div>
+            `);
+        }
+    } catch (err) {
+        showResult(resultEl, `<strong>Error:</strong> ${err.message}`, true);
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Convert to FSL';
+});
+
+// =====================================================================
+// Tool 2: IGRA download + convert
+// =====================================================================
+document.getElementById('download-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const resultEl = document.getElementById('download-result');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    const body = {
+        station: document.getElementById('dl-station').value,
+        name: document.getElementById('dl-name').value,
+        start_year: document.getElementById('dl-start-year').value,
+        end_year: document.getElementById('dl-end-year').value,
+        wban: document.getElementById('dl-wban').value,
+        lat: document.getElementById('dl-lat').value,
+        lon: document.getElementById('dl-lon').value,
+        elev: document.getElementById('dl-elev').value,
+    };
+
+    try {
+        const resp = await fetch('/api/download-convert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            showResult(resultEl, `<strong>Error:</strong> ${data.error}`, true);
+            btn.disabled = false;
+            btn.textContent = 'Download & Convert';
+            return;
+        }
+
+        // Poll for completion
+        showResult(resultEl, '<strong>Running...</strong> Starting download...', false);
+        pollJob(data.job_id, resultEl, btn, 'Download & Convert');
+    } catch (err) {
+        showResult(resultEl, `<strong>Error:</strong> ${err.message}`, true);
+        btn.disabled = false;
+        btn.textContent = 'Download & Convert';
+    }
+});
+
+// =====================================================================
+// Tool 3: Wyoming download + convert
+// =====================================================================
+document.getElementById('wyoming-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const resultEl = document.getElementById('wyoming-result');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    const hourSel = document.getElementById('wy-hour').value;
+    const body = {
+        station: document.getElementById('wy-station').value,
+        start: document.getElementById('wy-start').value,
+        end: document.getElementById('wy-end').value,
+        hour: hourSel === 'both' ? 12 : parseInt(hourSel),
+        both_hours: hourSel === 'both',
+        name: document.getElementById('wy-name').value,
+        wban: document.getElementById('wy-wban').value,
+        lat: document.getElementById('wy-lat').value,
+        lon: document.getElementById('wy-lon').value,
+        elev: document.getElementById('wy-elev').value,
+    };
+
+    try {
+        const resp = await fetch('/api/wyoming-convert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            showResult(resultEl, `<strong>Error:</strong> ${data.error}`, true);
+            btn.disabled = false;
+            btn.textContent = 'Download & Convert';
+            return;
+        }
+
+        showResult(resultEl, '<strong>Running...</strong> Starting download...', false);
+        pollJob(data.job_id, resultEl, btn, 'Download & Convert');
+    } catch (err) {
+        showResult(resultEl, `<strong>Error:</strong> ${err.message}`, true);
+        btn.disabled = false;
+        btn.textContent = 'Download & Convert';
+    }
+});
+
+// =====================================================================
+// Job polling
+// =====================================================================
+function pollJob(jobId, resultEl, btn, btnLabel) {
+    const interval = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/job/${jobId}`);
+            const job = await resp.json();
+
+            if (job.status === 'running') {
+                let msg = `<strong>Running...</strong> ${job.step || ''}`;
+                if (job.progress) msg += ` (${job.progress}%)`;
+                showResult(resultEl, msg, false);
+            } else if (job.status === 'complete') {
+                clearInterval(interval);
+                let filesHtml = job.files.map(f =>
+                    `<tr>
+                        <td>${fileLink(jobId, f.filename)}</td>
+                        <td>${f.soundings} soundings</td>
+                        <td>${f.size_kb} KB</td>
+                        <td>${f.combined ? '(combined)' : ''}</td>
+                    </tr>`
+                ).join('');
+                showResult(resultEl, `
+                    <strong>Complete!</strong>
+                    <table class="file-table">
+                        <thead><tr><th>File</th><th>Soundings</th><th>Size</th><th></th></tr></thead>
+                        <tbody>${filesHtml}</tbody>
+                    </table>
+                `);
+                btn.disabled = false;
+                btn.textContent = btnLabel;
+            } else if (job.status === 'error') {
+                clearInterval(interval);
+                showResult(resultEl, `<strong>Error:</strong> ${job.error}`, true);
+                btn.disabled = false;
+                btn.textContent = btnLabel;
+            }
+        } catch (err) {
+            clearInterval(interval);
+            showResult(resultEl, `<strong>Error polling job:</strong> ${err.message}`, true);
+            btn.disabled = false;
+            btn.textContent = btnLabel;
+        }
+    }, 2000);
+}
+</script>
+
+</body>
+</html>
