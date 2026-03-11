@@ -25,7 +25,7 @@ IGRA v2 format reference:
 FSL format reference:
   Line types 254 (header), 1 (station ID), 2 (sounding checks),
   3 (station name/wind units), 4 (mandatory levels), 5 (significant levels),
-  9 (surface level).
+  6 (wind-only levels), 7 (tropopause), 9 (surface level).
 """
 
 import argparse
@@ -65,6 +65,12 @@ FSL_MISSING = 99999
 # Mandatory pressure levels (hPa) recognized by FSL/AERMET
 MANDATORY_LEVELS = [
     1000, 925, 850, 700, 500, 400, 300, 250, 200, 150, 100, 70, 50, 30, 20, 10
+]
+
+# Month abbreviations for FSL type 254 header
+MONTH_ABBR = [
+    '', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
 ]
 
 
@@ -241,17 +247,40 @@ def extract_wmo_number(station_id):
     return digits if digits else '99999'
 
 
-def classify_fsl_level(pres_hpa, is_surface=False):
+def classify_fsl_level(pres_hpa, lvltyp1, lvltyp2, is_surface=False):
     """
     Determine FSL line type for a pressure level.
-    Returns 9 for surface, 4 for mandatory, 5 for significant.
+
+    FSL line types:
+      9 = surface
+      4 = mandatory pressure level
+      5 = significant thermodynamic level
+      6 = significant wind level (wind-only)
+      7 = tropopause
+      8 = maximum wind level
     """
     if is_surface:
         return 9
+    if lvltyp2 == 2:
+        return 7  # tropopause
+    if lvltyp1 == 3:
+        return 6  # wind-only level
     for mandatory in MANDATORY_LEVELS:
         if abs(pres_hpa - mandatory) < 0.5:
             return 4
     return 5
+
+
+def format_lat_fsl(lat):
+    """Format latitude for FSL type 1 line: e.g., '42.70N' right-justified in 7 chars."""
+    direction = 'N' if lat >= 0 else 'S'
+    return f"{abs(lat):.2f}{direction}"
+
+
+def format_lon_fsl(lon):
+    """Format longitude for FSL type 1 line: e.g., '83.47W' right-justified in 7 chars."""
+    direction = 'E' if lon >= 0 else 'W'
+    return f"{abs(lon):.2f}{direction}"
 
 
 def write_fsl_sounding(outfile, header, levels, station_meta):
@@ -287,15 +316,22 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
     day = header['day']
     month = header['month']
     year = header['year']
+    month_abbr = MONTH_ABBR[month] if 1 <= month <= 12 else '???'
+
+    # Release time (hhmm from IGRA header, or FSL_MISSING)
+    reltime = header.get('reltime')
+    reltime_val = reltime if reltime is not None else FSL_MISSING
 
     # --- Type 254: Header line ---
+    # Reference format: "    254      0      1      JAN    2013"
     outfile.write(
-        f"    254  {hour:5d}  {day:5d}  {month:5d}  {year:5d}                      \n"
+        f"    254{hour:7d}{day:7d}{month_abbr:>9s}{year:8d}\n"
     )
 
     # --- Type 1: Station ID line ---
-    lat_100 = int(round(lat * 100))
-    lon_100 = int(round(lon * 100))
+    # Reference format: "      1   4830  72632  42.70N 83.47W   329   2304"
+    lat_str = format_lat_fsl(lat)
+    lon_str = format_lon_fsl(lon)
     elev_int = int(round(elev))
     try:
         wban_int = int(wban)
@@ -306,18 +342,23 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
     except (ValueError, TypeError):
         wmo_int = 99999
     outfile.write(
-        f"      1{wban_int:7d}{wmo_int:7d}{lat_100:7d}{lon_100:7d}{elev_int:7d}       \n"
+        f"      1{wban_int:7d}{wmo_int:7d}{lat_str:>7s}{lon_str:>7s}"
+        f"{elev_int:7d}{reltime_val:7d}\n"
     )
 
-    # --- Type 2: Sounding checks (all missing) ---
+    # --- Type 2: Sounding checks (all missing — IGRA doesn't provide these) ---
+    # Reference format: "      2    100   3090   2160    134  99999      3"
     outfile.write(
         f"      2{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}"
-        f"{FSL_MISSING:7d}{FSL_MISSING:7d}       \n"
+        f"{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}\n"
     )
 
     # --- Type 3: Station name and wind units ---
+    # Reference format: "      3           DTX                99999     kt"
+    # Positions: name at col 18, 99999 at col 37, kt at col 47 (0-indexed)
+    name_str = name[:14]
     outfile.write(
-        f"      3          {name:<14s}                    kt\n"
+        f"      3           {name_str:<19s}{FSL_MISSING:5d}     kt\n"
     )
 
     # --- Data lines ---
@@ -328,7 +369,9 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
 
         # In FSL, only the first surface level gets type 9
         is_surface = (lev['lvltyp2'] == 1 and not surface_written)
-        linetype = classify_fsl_level(pres_hpa, is_surface)
+        linetype = classify_fsl_level(
+            pres_hpa, lev['lvltyp1'], lev['lvltyp2'], is_surface
+        )
         if is_surface:
             surface_written = True
 
