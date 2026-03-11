@@ -283,14 +283,70 @@ def format_lon_fsl(lon):
     return f"{abs(lon):.2f}{direction}"
 
 
+def _convert_level_values(lev):
+    """
+    Convert a single IGRA level dict to FSL field values.
+
+    Returns (pres_10, height, temp_10, dewpt_10, wdir, wspd) tuple
+    with FSL_MISSING for unavailable fields.
+    """
+    pres_10 = int(round(lev['pres_pa'] / 10.0))
+    height = lev['gph_m'] if lev['gph_m'] is not None else FSL_MISSING
+    temp_10 = lev['temp_10c'] if lev['temp_10c'] is not None else FSL_MISSING
+
+    if lev['temp_10c'] is not None and lev['dpdp_10c'] is not None:
+        dewpt_10 = lev['temp_10c'] - lev['dpdp_10c']
+    else:
+        dewpt_10 = FSL_MISSING
+
+    wdir = lev['wdir_deg'] if lev['wdir_deg'] is not None else FSL_MISSING
+    if lev['wspd_10ms'] is not None:
+        wspd = int(round(lev['wspd_10ms'] / 10.0 * 1.94384))
+    else:
+        wspd = FSL_MISSING
+
+    return pres_10, height, temp_10, dewpt_10, wdir, wspd
+
+
+def _has_thermo(lev):
+    """True if this level has temperature data."""
+    return lev['temp_10c'] is not None
+
+
+def _has_wind(lev):
+    """True if this level has wind data."""
+    return lev['wdir_deg'] is not None or lev['wspd_10ms'] is not None
+
+
+def _write_fsl_line(outfile, linetype, pres_10, height, temp_10, dewpt_10,
+                    wdir, wspd):
+    """Write a single FSL data line."""
+    outfile.write(
+        f"{linetype:7d}{pres_10:7d}{height:7d}{temp_10:7d}"
+        f"{dewpt_10:7d}{wdir:7d}{wspd:7d}\n"
+    )
+
+
+def _is_mandatory(pres_hpa):
+    """Check if a pressure (hPa) matches a mandatory level."""
+    for m in MANDATORY_LEVELS:
+        if abs(pres_hpa - m) < 0.5:
+            return True
+    return False
+
+
 def write_fsl_sounding(outfile, header, levels, station_meta):
     """
     Write a single IGRA sounding in FSL format.
 
-    Performs unit conversions from IGRA native units to FSL:
+    Correctly splits significant levels into separate thermodynamic (type 5)
+    and wind (type 6) lines, includes below-surface mandatory levels, and
+    detects max-wind levels (type 8).
+
+    Unit conversions from IGRA native units to FSL:
       - Pressure:  Pa → mb×10  (divide by 10)
       - Height:    meters (no conversion)
-      - Temperature: tenths °C (no conversion, IGRA and FSL both use tenths °C)
+      - Temperature: tenths °C (no conversion)
       - Dew point: computed from temp - dew point depression (tenths °C)
       - Wind dir:  degrees (no conversion)
       - Wind speed: tenths m/s → knots (÷10 × 1.94384)
@@ -298,7 +354,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
     if not levels:
         return False
 
-    # Filter out levels with no pressure (can't place them in a sounding)
+    # Filter out levels with no pressure
     levels = [lev for lev in levels if lev['pres_pa'] is not None]
     if not levels:
         return False
@@ -318,18 +374,133 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
     year = header['year']
     month_abbr = MONTH_ABBR[month] if 1 <= month <= 12 else '???'
 
-    # Release time (hhmm from IGRA header, or FSL_MISSING)
     reltime = header.get('reltime')
     reltime_val = reltime if reltime is not None else FSL_MISSING
 
-    # --- Type 254: Header line ---
-    # Reference format: "    254      0      1      JAN    2013"
+    # ------------------------------------------------------------------
+    # Build the list of FSL output lines BEFORE writing, so we can count
+    # them for the type 3 header and deduplicate mandatory levels.
+    # Each entry: (linetype, pres_10, height, temp, dewpt, wdir, wspd)
+    # ------------------------------------------------------------------
+    fsl_lines = []
+
+    # Find surface pressure to know which mandatory levels are below ground
+    surface_pres_hpa = None
+    for lev in levels:
+        if lev['lvltyp2'] == 1:
+            surface_pres_hpa = lev['pres_pa'] / 100.0
+            break
+
+    # Track which mandatory levels we've already emitted (by hPa)
+    mandatory_emitted = set()
+
+    # Track max wind speed for type 8 detection
+    max_wspd_raw = -1
+    max_wspd_lev = None
+
+    surface_written = False
+    for lev in levels:
+        pres_pa = lev['pres_pa']
+        pres_hpa = pres_pa / 100.0
+        pres_10, height, temp_10, dewpt_10, wdir, wspd = \
+            _convert_level_values(lev)
+
+        has_t = _has_thermo(lev)
+        has_w = _has_wind(lev)
+
+        # Track max wind for type 8
+        if lev['wspd_10ms'] is not None and lev['wspd_10ms'] > max_wspd_raw:
+            max_wspd_raw = lev['wspd_10ms']
+            max_wspd_lev = lev
+
+        # --- Surface (type 9) ---
+        if lev['lvltyp2'] == 1 and not surface_written:
+            surface_written = True
+
+            # Write the surface line with all data
+            fsl_lines.append((9, pres_10, height, temp_10, dewpt_10,
+                              wdir, wspd))
+
+            # After the surface, emit any mandatory levels that are
+            # below the surface (higher pressure = below ground).
+            if surface_pres_hpa is not None:
+                for m in MANDATORY_LEVELS:
+                    if m > surface_pres_hpa + 0.5:
+                        m_pres_10 = m * 10
+                        mandatory_emitted.add(m)
+                        fsl_lines.append((
+                            4, m_pres_10, FSL_MISSING, FSL_MISSING,
+                            FSL_MISSING, FSL_MISSING, FSL_MISSING
+                        ))
+            continue
+
+        # --- Tropopause (type 7): all fields on one line ---
+        if lev['lvltyp2'] == 2:
+            fsl_lines.append((7, pres_10, height, temp_10, dewpt_10,
+                              wdir, wspd))
+            continue
+
+        # --- Wind-only from IGRA (lvltyp1=3) → type 6 ---
+        if lev['lvltyp1'] == 3:
+            fsl_lines.append((6, pres_10, height, FSL_MISSING, FSL_MISSING,
+                              wdir, wspd))
+            continue
+
+        # --- Mandatory level (type 4): all fields on one line ---
+        if _is_mandatory(pres_hpa):
+            m_hpa = round(pres_hpa)
+            if m_hpa in mandatory_emitted:
+                continue  # skip duplicate
+            mandatory_emitted.add(m_hpa)
+            fsl_lines.append((4, pres_10, height, temp_10, dewpt_10,
+                              wdir, wspd))
+            continue
+
+        # --- Significant level (non-mandatory, non-surface, non-tropo) ---
+        # Split into type 5 (thermo) and type 6 (wind) lines.
+        if has_t:
+            fsl_lines.append((5, pres_10, height, temp_10, dewpt_10,
+                              FSL_MISSING, FSL_MISSING))
+        if has_w:
+            fsl_lines.append((6, pres_10, height, FSL_MISSING, FSL_MISSING,
+                              wdir, wspd))
+
+    # Insert type 8 (max wind) if we found one and it isn't already a
+    # mandatory/surface/tropopause level
+    if max_wspd_lev is not None:
+        mw = max_wspd_lev
+        mw_hpa = mw['pres_pa'] / 100.0
+        is_special = (mw['lvltyp2'] in (1, 2) or _is_mandatory(mw_hpa))
+        if not is_special:
+            mw_pres_10, mw_height, _, _, mw_wdir, mw_wspd = \
+                _convert_level_values(mw)
+            # Insert after the last line at or above this pressure
+            insert_idx = len(fsl_lines)
+            for i, fl in enumerate(fsl_lines):
+                if fl[1] < mw_pres_10:
+                    insert_idx = i
+                    break
+            fsl_lines.insert(insert_idx, (
+                8, mw_pres_10, mw_height, FSL_MISSING, FSL_MISSING,
+                mw_wdir, mw_wspd
+            ))
+
+    if not fsl_lines:
+        return False
+
+    # Count data lines for the type 3 header
+    num_data_lines = len(fsl_lines)
+
+    # ------------------------------------------------------------------
+    # Write header lines
+    # ------------------------------------------------------------------
+
+    # Type 254
     outfile.write(
         f"    254{hour:7d}{day:7d}{month_abbr:>9s}{year:8d}\n"
     )
 
-    # --- Type 1: Station ID line ---
-    # Reference format: "      1   4830  72632  42.70N 83.47W   329   2304"
+    # Type 1
     lat_str = format_lat_fsl(lat)
     lon_str = format_lon_fsl(lon)
     elev_int = int(round(elev))
@@ -346,64 +517,23 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
         f"{elev_int:7d}{reltime_val:7d}\n"
     )
 
-    # --- Type 2: Sounding checks (all missing — IGRA doesn't provide these) ---
-    # Reference format: "      2    100   3090   2160    134  99999      3"
+    # Type 2 (sounding checks — IGRA doesn't provide these)
     outfile.write(
         f"      2{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}"
         f"{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}\n"
     )
 
-    # --- Type 3: Station name and wind units ---
-    # Reference format: "      3           DTX                99999     kt"
-    # Positions: name at col 18, 99999 at col 37, kt at col 47 (0-indexed)
+    # Type 3 (station name, level count, wind units)
     name_str = name[:14]
     outfile.write(
-        f"      3           {name_str:<19s}{FSL_MISSING:5d}     kt\n"
+        f"      3           {name_str:<19s}{num_data_lines:5d}     kt\n"
     )
 
-    # --- Data lines ---
-    surface_written = False
-    for lev in levels:
-        pres_pa = lev['pres_pa']
-        pres_hpa = pres_pa / 100.0
-
-        # In FSL, only the first surface level gets type 9
-        is_surface = (lev['lvltyp2'] == 1 and not surface_written)
-        linetype = classify_fsl_level(
-            pres_hpa, lev['lvltyp1'], lev['lvltyp2'], is_surface
-        )
-        if is_surface:
-            surface_written = True
-
-        # Pressure: Pa → mb×10 (i.e., divide by 10)
-        pres_10 = int(round(pres_pa / 10.0))
-
-        # Height: meters, direct
-        height = lev['gph_m'] if lev['gph_m'] is not None else FSL_MISSING
-
-        # Temperature: tenths of °C in both formats
-        temp_10 = lev['temp_10c'] if lev['temp_10c'] is not None else FSL_MISSING
-
-        # Dew point: IGRA gives dew point depression, FSL wants dew point
-        if lev['temp_10c'] is not None and lev['dpdp_10c'] is not None:
-            dewpt_10 = lev['temp_10c'] - lev['dpdp_10c']
-        else:
-            dewpt_10 = FSL_MISSING
-
-        # Wind direction: degrees, direct
-        wdir = lev['wdir_deg'] if lev['wdir_deg'] is not None else FSL_MISSING
-
-        # Wind speed: tenths m/s → knots
-        if lev['wspd_10ms'] is not None:
-            wspd_ms = lev['wspd_10ms'] / 10.0
-            wspd = int(round(wspd_ms * 1.94384))
-        else:
-            wspd = FSL_MISSING
-
-        outfile.write(
-            f"{linetype:7d}{pres_10:7d}{height:7d}{temp_10:7d}"
-            f"{dewpt_10:7d}{wdir:7d}{wspd:7d}\n"
-        )
+    # ------------------------------------------------------------------
+    # Write data lines
+    # ------------------------------------------------------------------
+    for line in fsl_lines:
+        _write_fsl_line(outfile, *line)
 
     return True
 
