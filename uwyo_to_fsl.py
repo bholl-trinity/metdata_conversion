@@ -55,6 +55,7 @@ REQUEST_DELAY = 3.0
 
 # FSL missing value
 FSL_MISSING = 99999
+FSL_MISSING_CLASSIC = 32767  # Pre-2000 FSL format missing value
 
 # Mandatory pressure levels (hPa) used in FSL format
 MANDATORY_LEVELS = [
@@ -71,10 +72,10 @@ STATION_INFO = {
 # HELPERS
 # ============================================================================
 
-def knots_from_ms(speed_ms):
+def knots_from_ms(speed_ms, missing=FSL_MISSING):
     """Convert m/s to knots."""
     if speed_ms is None:
-        return FSL_MISSING
+        return missing
     return round(speed_ms * 1.94384)
 
 
@@ -136,12 +137,16 @@ def classify_level(pres_hpa, is_surface=False):
     return 5  # significant level
 
 
-def write_fsl_sounding(outfile, levels, station_id, dt, station_meta):
+def write_fsl_sounding(outfile, levels, station_id, dt, station_meta, classic=False):
     """
     Write a single sounding in FSL format.
+
+    If classic=True, uses pre-2000 missing value (32767) instead of 99999.
     """
     if not levels:
         return False
+
+    missing = FSL_MISSING_CLASSIC if classic else FSL_MISSING
 
     wban = station_meta.get("wban", "99999")
     name = station_meta.get("name", station_id)
@@ -169,7 +174,7 @@ def write_fsl_sounding(outfile, levels, station_id, dt, station_meta):
 
     # --- Sounding checks line (type 2) - leave blank ---
     outfile.write(
-        f"      2{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}       \n"
+        f"      2{missing:7d}{missing:7d}{missing:7d}{missing:7d}{missing:7d}       \n"
     )
 
     # --- Station name and wind units line (type 3) ---
@@ -182,12 +187,12 @@ def write_fsl_sounding(outfile, levels, station_id, dt, station_meta):
         is_surface = (i == 0)
         linetype   = classify_level(lev["pres_hpa"], is_surface)
 
-        pres_10  = int(round(lev["pres_hpa"] * 10)) if lev["pres_hpa"] is not None else FSL_MISSING
-        height   = lev["height_m"]  if lev["height_m"]  is not None else FSL_MISSING
-        temp_10  = int(round(lev["temp_c"]  * 10)) if lev["temp_c"]  is not None else FSL_MISSING
-        dewpt_10 = int(round(lev["dewpt_c"] * 10)) if lev["dewpt_c"] is not None else FSL_MISSING
-        wdir     = lev["wdir_deg"]  if lev["wdir_deg"]  is not None else FSL_MISSING
-        wspd     = knots_from_ms(lev["wspd_ms"])
+        pres_10  = int(round(lev["pres_hpa"] * 10)) if lev["pres_hpa"] is not None else missing
+        height   = lev["height_m"]  if lev["height_m"]  is not None else missing
+        temp_10  = int(round(lev["temp_c"]  * 10)) if lev["temp_c"]  is not None else missing
+        dewpt_10 = int(round(lev["dewpt_c"] * 10)) if lev["dewpt_c"] is not None else missing
+        wdir     = lev["wdir_deg"]  if lev["wdir_deg"]  is not None else missing
+        wspd     = knots_from_ms(lev["wspd_ms"], missing)
 
         outfile.write(
             f"{linetype:7d}{pres_10:7d}{height:7d}{temp_10:7d}{dewpt_10:7d}{wdir:7d}{wspd:7d}\n"

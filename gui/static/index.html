@@ -77,6 +77,10 @@
                     </div>
                 </details>
 
+                <div class="form-group checkbox-group">
+                    <label><input type="checkbox" name="classic_fsl" id="upload-classic"> Classic FSL format (uses 32767 missing value for older EPA tools)</label>
+                </div>
+
                 <button type="submit" class="btn btn-primary">Convert to FSL</button>
             </form>
 
@@ -137,6 +141,10 @@
                         </div>
                     </div>
                 </details>
+
+                <div class="form-group checkbox-group">
+                    <label><input type="checkbox" id="dl-classic"> Classic FSL format (uses 32767 missing value for older EPA tools)</label>
+                </div>
 
                 <button type="submit" class="btn btn-primary">Download &amp; Convert</button>
             </form>
@@ -212,6 +220,10 @@
                     </div>
                 </details>
 
+                <div class="form-group checkbox-group">
+                    <label><input type="checkbox" id="wy-classic"> Classic FSL format (uses 32767 missing value for older EPA tools)</label>
+                </div>
+
                 <button type="submit" class="btn btn-primary">Download &amp; Convert</button>
             </form>
 
@@ -259,6 +271,7 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
     resultEl.classList.add('hidden');
 
     const formData = new FormData(e.target);
+    formData.set('classic_fsl', document.getElementById('upload-classic').checked ? '1' : '');
 
     try {
         const resp = await fetch('/api/convert-file', { method: 'POST', body: formData });
@@ -301,6 +314,7 @@ document.getElementById('download-form').addEventListener('submit', async (e) =>
         lat: document.getElementById('dl-lat').value,
         lon: document.getElementById('dl-lon').value,
         elev: document.getElementById('dl-elev').value,
+        classic_fsl: document.getElementById('dl-classic').checked,
     };
 
     try {
@@ -350,6 +364,7 @@ document.getElementById('wyoming-form').addEventListener('submit', async (e) => 
         lat: document.getElementById('wy-lat').value,
         lon: document.getElementById('wy-lon').value,
         elev: document.getElementById('wy-elev').value,
+        classic_fsl: document.getElementById('wy-classic').checked,
     };
 
     try {

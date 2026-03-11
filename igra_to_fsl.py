@@ -61,6 +61,7 @@ IGRA_REMOVED = -8888  # removed by quality control
 # ============================================================================
 
 FSL_MISSING = 99999
+FSL_MISSING_CLASSIC = 32767  # Pre-2000 FSL format missing value
 
 # Mandatory pressure levels (hPa) recognized by FSL/AERMET
 MANDATORY_LEVELS = [
@@ -283,27 +284,27 @@ def format_lon_fsl(lon):
     return f"{abs(lon):.2f}{direction}"
 
 
-def _convert_level_values(lev):
+def _convert_level_values(lev, missing=FSL_MISSING):
     """
     Convert a single IGRA level dict to FSL field values.
 
     Returns (pres_10, height, temp_10, dewpt_10, wdir, wspd) tuple
-    with FSL_MISSING for unavailable fields.
+    with the given missing value for unavailable fields.
     """
     pres_10 = int(round(lev['pres_pa'] / 10.0))
-    height = lev['gph_m'] if lev['gph_m'] is not None else FSL_MISSING
-    temp_10 = lev['temp_10c'] if lev['temp_10c'] is not None else FSL_MISSING
+    height = lev['gph_m'] if lev['gph_m'] is not None else missing
+    temp_10 = lev['temp_10c'] if lev['temp_10c'] is not None else missing
 
     if lev['temp_10c'] is not None and lev['dpdp_10c'] is not None:
         dewpt_10 = lev['temp_10c'] - lev['dpdp_10c']
     else:
-        dewpt_10 = FSL_MISSING
+        dewpt_10 = missing
 
-    wdir = lev['wdir_deg'] if lev['wdir_deg'] is not None else FSL_MISSING
+    wdir = lev['wdir_deg'] if lev['wdir_deg'] is not None else missing
     if lev['wspd_10ms'] is not None:
         wspd = int(round(lev['wspd_10ms'] / 10.0 * 1.94384))
     else:
-        wspd = FSL_MISSING
+        wspd = missing
 
     return pres_10, height, temp_10, dewpt_10, wdir, wspd
 
@@ -335,13 +336,16 @@ def _is_mandatory(pres_hpa):
     return False
 
 
-def write_fsl_sounding(outfile, header, levels, station_meta):
+def write_fsl_sounding(outfile, header, levels, station_meta, classic=False):
     """
     Write a single IGRA sounding in FSL format.
 
     Correctly splits significant levels into separate thermodynamic (type 5)
     and wind (type 6) lines, includes below-surface mandatory levels, and
     detects max-wind levels (type 8).
+
+    If classic=True, uses the pre-2000 FSL missing value (32767) instead
+    of the modern value (99999).
 
     Unit conversions from IGRA native units to FSL:
       - Pressure:  Pa → mb×10  (divide by 10)
@@ -353,6 +357,8 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
     """
     if not levels:
         return False
+
+    missing = FSL_MISSING_CLASSIC if classic else FSL_MISSING
 
     # Filter out levels with no pressure
     levels = [lev for lev in levels if lev['pres_pa'] is not None]
@@ -375,7 +381,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
     month_abbr = MONTH_ABBR[month] if 1 <= month <= 12 else '???'
 
     reltime = header.get('reltime')
-    reltime_val = reltime if reltime is not None else FSL_MISSING
+    reltime_val = reltime if reltime is not None else missing
 
     # ------------------------------------------------------------------
     # Build the list of FSL output lines BEFORE writing, so we can count
@@ -403,7 +409,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
         pres_pa = lev['pres_pa']
         pres_hpa = pres_pa / 100.0
         pres_10, height, temp_10, dewpt_10, wdir, wspd = \
-            _convert_level_values(lev)
+            _convert_level_values(lev, missing)
 
         has_t = _has_thermo(lev)
         has_w = _has_wind(lev)
@@ -429,8 +435,8 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
                         m_pres_10 = m * 10
                         mandatory_emitted.add(m)
                         fsl_lines.append((
-                            4, m_pres_10, FSL_MISSING, FSL_MISSING,
-                            FSL_MISSING, FSL_MISSING, FSL_MISSING
+                            4, m_pres_10, missing, missing,
+                            missing, missing, missing
                         ))
             continue
 
@@ -442,7 +448,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
 
         # --- Wind-only from IGRA (lvltyp1=3) → type 6 ---
         if lev['lvltyp1'] == 3:
-            fsl_lines.append((6, pres_10, height, FSL_MISSING, FSL_MISSING,
+            fsl_lines.append((6, pres_10, height, missing, missing,
                               wdir, wspd))
             continue
 
@@ -460,9 +466,9 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
         # Split into type 5 (thermo) and type 6 (wind) lines.
         if has_t:
             fsl_lines.append((5, pres_10, height, temp_10, dewpt_10,
-                              FSL_MISSING, FSL_MISSING))
+                              missing, missing))
         if has_w:
-            fsl_lines.append((6, pres_10, height, FSL_MISSING, FSL_MISSING,
+            fsl_lines.append((6, pres_10, height, missing, missing,
                               wdir, wspd))
 
     # Insert type 8 (max wind) if we found one and it isn't already a
@@ -473,7 +479,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
         is_special = (mw['lvltyp2'] in (1, 2) or _is_mandatory(mw_hpa))
         if not is_special:
             mw_pres_10, mw_height, _, _, mw_wdir, mw_wspd = \
-                _convert_level_values(mw)
+                _convert_level_values(mw, missing)
             # Insert after the last line at or above this pressure
             insert_idx = len(fsl_lines)
             for i, fl in enumerate(fsl_lines):
@@ -481,7 +487,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
                     insert_idx = i
                     break
             fsl_lines.insert(insert_idx, (
-                8, mw_pres_10, mw_height, FSL_MISSING, FSL_MISSING,
+                8, mw_pres_10, mw_height, missing, missing,
                 mw_wdir, mw_wspd
             ))
 
@@ -529,8 +535,8 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
 
     # Extract MXWD (max wind pressure) and TROPL (tropopause pressure)
     # from the FSL lines we already built.
-    mxwd_10 = FSL_MISSING
-    tropl_10 = FSL_MISSING
+    mxwd_10 = missing
+    tropl_10 = missing
     if max_wspd_lev is not None:
         mxwd_10 = int(round(max_wspd_lev['pres_pa'] / 10.0))
     for fl in fsl_lines:
@@ -539,14 +545,14 @@ def write_fsl_sounding(outfile, header, levels, station_meta):
             break
 
     outfile.write(
-        f"      2{FSL_MISSING:7d}{mxwd_10:7d}{tropl_10:7d}"
-        f"{nlevels_total:7d}{FSL_MISSING:7d}{FSL_MISSING:7d}\n"
+        f"      2{missing:7d}{mxwd_10:7d}{tropl_10:7d}"
+        f"{nlevels_total:7d}{missing:7d}{missing:7d}\n"
     )
 
     # Type 3 (station name, STEFLAG, wind units)
     name_str = name[:14]
     outfile.write(
-        f"      3           {name_str:<19s}{FSL_MISSING:5d}     kt\n"
+        f"      3           {name_str:<19s}{missing:5d}     kt\n"
     )
 
     # ------------------------------------------------------------------
@@ -584,6 +590,8 @@ def main():
                         help="Station longitude (default: from IGRA header)")
     parser.add_argument("--elev", type=float, default=None,
                         help="Station elevation in meters (default: 0)")
+    parser.add_argument("--classic", action="store_true",
+                        help="Use classic FSL format (32767 missing value for older EPA tools)")
 
     args = parser.parse_args()
 
@@ -641,7 +649,7 @@ def main():
                 print(f"Location:    {lat:.4f}N, {lon:.4f}E")
                 print()
 
-            wrote = write_fsl_sounding(outfile, header, levels, station_meta)
+            wrote = write_fsl_sounding(outfile, header, levels, station_meta, classic=args.classic)
             if wrote:
                 success_count += 1
             else:

@@ -334,13 +334,15 @@ def trim_igra_to_years(input_path, output_path, start_year, end_year):
 # ============================================================================
 
 def convert_igra_to_fsl_by_year(input_path, outdir, station_name, station_meta,
-                                start_year, end_year):
+                                start_year, end_year, classic=False):
     """
     Convert an IGRA file to FSL, producing per-year and combined output files.
 
     Output files:
       <station_name><YY>.rao         per-year files
       <station_name><YY1><YY2>.rao   combined file (if multi-year)
+
+    If classic=True, uses pre-2000 missing value (32767) instead of 99999.
 
     Returns dict with per-year sounding counts.
     """
@@ -371,7 +373,7 @@ def convert_igra_to_fsl_by_year(input_path, outdir, station_name, station_meta,
                 continue
 
             # Write to combined file
-            wrote = write_fsl_sounding(combined_file, header, levels, station_meta)
+            wrote = write_fsl_sounding(combined_file, header, levels, station_meta, classic=classic)
             if not wrote:
                 continue
             combined_count += 1
@@ -384,7 +386,7 @@ def convert_igra_to_fsl_by_year(input_path, outdir, station_name, station_meta,
                 year_files[year] = open(year_path, 'w')
                 year_counts[year] = 0
 
-            write_fsl_sounding(year_files[year], header, levels, station_meta)
+            write_fsl_sounding(year_files[year], header, levels, station_meta, classic=classic)
             year_counts[year] += 1
 
             if combined_count % 100 == 0:
@@ -433,6 +435,8 @@ def main():
                         help="Keep intermediate IGRA files (default: delete them)")
     parser.add_argument("--igra-file", default=None,
                         help="Use an existing IGRA file instead of downloading")
+    parser.add_argument("--classic", action="store_true",
+                        help="Use classic FSL format (32767 missing value for older EPA tools)")
 
     args = parser.parse_args()
 
@@ -530,7 +534,7 @@ def main():
     print("Step 4: Converting to FSL format")
     result = convert_igra_to_fsl_by_year(
         igra_trimmed_path, args.outdir, args.name, station_meta,
-        args.start_year, args.end_year,
+        args.start_year, args.end_year, classic=args.classic,
     )
     print(f"\r  Converted {result['combined_count']} soundings total")
     print()

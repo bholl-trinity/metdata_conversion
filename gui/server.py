@@ -63,6 +63,7 @@ def convert_file():
     lat = request.form.get('lat') or None
     lon = request.form.get('lon') or None
     elev = request.form.get('elev') or None
+    classic_fsl = bool(request.form.get('classic_fsl'))
 
     # Parse dates
     from datetime import datetime
@@ -103,7 +104,7 @@ def convert_file():
         skipped = 0
         with open(output_path, 'w') as out:
             for header, levels in soundings:
-                wrote = write_fsl_sounding(out, header, levels, station_meta)
+                wrote = write_fsl_sounding(out, header, levels, station_meta, classic=classic_fsl)
                 if wrote:
                     success += 1
                 else:
@@ -158,6 +159,8 @@ def download_convert():
             name = call_sign
         else:
             name = extract_wmo_number(station)
+
+    classic_fsl = data.get('classic_fsl', False)
 
     if end_year < start_year:
         return jsonify(error="end_year must be >= start_year"), 400
@@ -220,7 +223,8 @@ def download_convert():
             # Step 4: Convert
             job['step'] = 'Converting to FSL format...'
             result = convert_igra_to_fsl_by_year(
-                igra_trimmed, job_dir, name, station_meta, start_year, end_year
+                igra_trimmed, job_dir, name, station_meta, start_year, end_year,
+                classic=classic_fsl
             )
 
             # Build file list
@@ -302,6 +306,8 @@ def wyoming_convert():
         if val is not None and val != '':
             station_meta[key] = float(val) if key in ('lat', 'lon', 'elev') else val
 
+    classic_fsl = data.get('classic_fsl', False)
+
     if 'name' not in station_meta:
         station_meta['name'] = station
     if 'wban' not in station_meta:
@@ -367,7 +373,7 @@ def wyoming_convert():
                         if csv_text:
                             levels = parse_csv_sounding(csv_text)
                             if levels and len(levels) >= 3:
-                                wrote = uwyo_write_fsl(outfile, levels, station, dt, station_meta)
+                                wrote = uwyo_write_fsl(outfile, levels, station, dt, station_meta, classic=classic_fsl)
                                 if wrote:
                                     success_count += 1
                                 else:
