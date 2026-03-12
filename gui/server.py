@@ -64,6 +64,7 @@ def convert_file():
     lon = request.form.get('lon') or None
     elev = request.form.get('elev') or None
     classic_fsl = bool(request.form.get('classic_fsl'))
+    thin = bool(request.form.get('thin'))
 
     # Parse dates
     from datetime import datetime
@@ -104,7 +105,7 @@ def convert_file():
         skipped = 0
         with open(output_path, 'w') as out:
             for header, levels in soundings:
-                wrote = write_fsl_sounding(out, header, levels, station_meta, classic=classic_fsl)
+                wrote = write_fsl_sounding(out, header, levels, station_meta, classic=classic_fsl, thin=thin)
                 if wrote:
                     success += 1
                 else:
@@ -161,6 +162,7 @@ def download_convert():
             name = extract_wmo_number(station)
 
     classic_fsl = data.get('classic_fsl', False)
+    thin = data.get('thin', False)
 
     if end_year < start_year:
         return jsonify(error="end_year must be >= start_year"), 400
@@ -224,7 +226,7 @@ def download_convert():
             job['step'] = 'Converting to FSL format...'
             result = convert_igra_to_fsl_by_year(
                 igra_trimmed, job_dir, name, station_meta, start_year, end_year,
-                classic=classic_fsl
+                classic=classic_fsl, thin=thin
             )
 
             # Build file list
