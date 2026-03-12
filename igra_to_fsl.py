@@ -284,14 +284,68 @@ def format_lon_fsl(lon):
     return f"{abs(lon):.2f}{direction}"
 
 
+def _interpolate_heights(levels):
+    """
+    Fill in missing geopotential heights by log-pressure interpolation.
+
+    Classic FSL files from NOAA/ESRL always had heights filled in, but IGRA
+    data often has missing GPH for non-mandatory levels.  This function
+    interpolates missing heights using log(pressure) vs height from the
+    surrounding levels that do have both pressure and height data.
+    """
+    # Build list of (index, pres_pa, gph_m) for levels with known height
+    known = []
+    for i, lev in enumerate(levels):
+        if lev['pres_pa'] is not None and lev['gph_m'] is not None:
+            known.append((i, lev['pres_pa'], lev['gph_m']))
+
+    if len(known) < 2:
+        return  # not enough data to interpolate
+
+    import math
+    for lev in levels:
+        if lev['gph_m'] is not None or lev['pres_pa'] is None:
+            continue
+
+        p = lev['pres_pa']
+        log_p = math.log(p)
+
+        # Find bracketing known levels
+        below = None  # higher pressure (lower altitude)
+        above = None  # lower pressure (higher altitude)
+        for _, kp, kh in known:
+            if kp >= p:
+                if below is None or kp < below[0]:
+                    below = (kp, kh)
+            if kp <= p:
+                if above is None or kp > above[0]:
+                    above = (kp, kh)
+
+        if below is not None and above is not None and below[0] != above[0]:
+            # Interpolate in log-pressure space
+            log_p_below = math.log(below[0])
+            log_p_above = math.log(above[0])
+            frac = (log_p - log_p_below) / (log_p_above - log_p_below)
+            lev['gph_m'] = int(round(below[1] + frac * (above[1] - below[1])))
+        elif below is not None and above is None:
+            # Extrapolate above using standard atmosphere scale height
+            log_p_below = math.log(below[0])
+            lev['gph_m'] = int(round(below[1] + (log_p_below - log_p) * 7400))
+        elif above is not None and below is None:
+            log_p_above = math.log(above[0])
+            lev['gph_m'] = int(round(above[1] + (log_p_above - log_p) * 7400))
+
+
 def _convert_level_values(lev, missing=FSL_MISSING):
     """
     Convert a single IGRA level dict to FSL field values.
 
-    Returns (pres_10, height, temp_10, dewpt_10, wdir, wspd) tuple
+    Returns (pres_mb, height, temp_10, dewpt_10, wdir, wspd) tuple
     with the given missing value for unavailable fields.
+
+    FSL format uses pressure in whole millibars (not mb×10).
     """
-    pres_10 = int(round(lev['pres_pa'] / 10.0))
+    pres_mb = int(round(lev['pres_pa'] / 100.0))
     height = lev['gph_m'] if lev['gph_m'] is not None else missing
     temp_10 = lev['temp_10c'] if lev['temp_10c'] is not None else missing
 
@@ -306,7 +360,7 @@ def _convert_level_values(lev, missing=FSL_MISSING):
     else:
         wspd = missing
 
-    return pres_10, height, temp_10, dewpt_10, wdir, wspd
+    return pres_mb, height, temp_10, dewpt_10, wdir, wspd
 
 
 def _has_thermo(lev):
@@ -319,11 +373,11 @@ def _has_wind(lev):
     return lev['wdir_deg'] is not None or lev['wspd_10ms'] is not None
 
 
-def _write_fsl_line(outfile, linetype, pres_10, height, temp_10, dewpt_10,
+def _write_fsl_line(outfile, linetype, pres_mb, height, temp_10, dewpt_10,
                     wdir, wspd):
     """Write a single FSL data line."""
     outfile.write(
-        f"{linetype:7d}{pres_10:7d}{height:7d}{temp_10:7d}"
+        f"{linetype:7d}{pres_mb:7d}{height:7d}{temp_10:7d}"
         f"{dewpt_10:7d}{wdir:7d}{wspd:7d}\n"
     )
 
@@ -414,7 +468,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
     kept significant levels (default 25 hPa).
 
     Unit conversions from IGRA native units to FSL:
-      - Pressure:  Pa → mb×10  (divide by 10)
+      - Pressure:  Pa → whole mb  (divide by 100)
       - Height:    meters (no conversion)
       - Temperature: tenths °C (no conversion)
       - Dew point: computed from temp - dew point depression (tenths °C)
@@ -430,6 +484,9 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
     levels = [lev for lev in levels if lev['pres_pa'] is not None]
     if not levels:
         return False
+
+    # Interpolate missing geopotential heights (classic FSL files always had them)
+    _interpolate_heights(levels)
 
     # Apply significant-level thinning if requested
     if thin:
@@ -458,7 +515,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
     # ------------------------------------------------------------------
     # Build the list of FSL output lines BEFORE writing, so we can count
     # them for the type 3 header and deduplicate mandatory levels.
-    # Each entry: (linetype, pres_10, height, temp, dewpt, wdir, wspd)
+    # Each entry: (linetype, pres_mb, height, temp, dewpt, wdir, wspd)
     # ------------------------------------------------------------------
     fsl_lines = []
 
@@ -480,7 +537,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
     for lev in levels:
         pres_pa = lev['pres_pa']
         pres_hpa = pres_pa / 100.0
-        pres_10, height, temp_10, dewpt_10, wdir, wspd = \
+        pres_mb, height, temp_10, dewpt_10, wdir, wspd = \
             _convert_level_values(lev, missing)
 
         has_t = _has_thermo(lev)
@@ -496,7 +553,7 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
             surface_written = True
 
             # Write the surface line with all data
-            fsl_lines.append((9, pres_10, height, temp_10, dewpt_10,
+            fsl_lines.append((9, pres_mb, height, temp_10, dewpt_10,
                               wdir, wspd))
 
             # After the surface, emit any mandatory levels that are
@@ -504,23 +561,22 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
             if surface_pres_hpa is not None:
                 for m in MANDATORY_LEVELS:
                     if m > surface_pres_hpa + 0.5:
-                        m_pres_10 = m * 10
                         mandatory_emitted.add(m)
                         fsl_lines.append((
-                            4, m_pres_10, missing, missing,
+                            4, m, missing, missing,
                             missing, missing, missing
                         ))
             continue
 
         # --- Tropopause (type 7): all fields on one line ---
         if lev['lvltyp2'] == 2:
-            fsl_lines.append((7, pres_10, height, temp_10, dewpt_10,
+            fsl_lines.append((7, pres_mb, height, temp_10, dewpt_10,
                               wdir, wspd))
             continue
 
         # --- Wind-only from IGRA (lvltyp1=3) → type 6 ---
         if lev['lvltyp1'] == 3:
-            fsl_lines.append((6, pres_10, height, missing, missing,
+            fsl_lines.append((6, pres_mb, height, missing, missing,
                               wdir, wspd))
             continue
 
@@ -530,17 +586,17 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
             if m_hpa in mandatory_emitted:
                 continue  # skip duplicate
             mandatory_emitted.add(m_hpa)
-            fsl_lines.append((4, pres_10, height, temp_10, dewpt_10,
+            fsl_lines.append((4, pres_mb, height, temp_10, dewpt_10,
                               wdir, wspd))
             continue
 
         # --- Significant level (non-mandatory, non-surface, non-tropo) ---
         # Split into type 5 (thermo) and type 6 (wind) lines.
         if has_t:
-            fsl_lines.append((5, pres_10, height, temp_10, dewpt_10,
+            fsl_lines.append((5, pres_mb, height, temp_10, dewpt_10,
                               missing, missing))
         if has_w:
-            fsl_lines.append((6, pres_10, height, missing, missing,
+            fsl_lines.append((6, pres_mb, height, missing, missing,
                               wdir, wspd))
 
     # Insert type 8 (max wind) if we found one and it isn't already a
@@ -550,16 +606,16 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
         mw_hpa = mw['pres_pa'] / 100.0
         is_special = (mw['lvltyp2'] in (1, 2) or _is_mandatory(mw_hpa))
         if not is_special:
-            mw_pres_10, mw_height, _, _, mw_wdir, mw_wspd = \
+            mw_pres_mb, mw_height, _, _, mw_wdir, mw_wspd = \
                 _convert_level_values(mw, missing)
             # Insert after the last line at or above this pressure
             insert_idx = len(fsl_lines)
             for i, fl in enumerate(fsl_lines):
-                if fl[1] < mw_pres_10:
+                if fl[1] < mw_pres_mb:
                     insert_idx = i
                     break
             fsl_lines.insert(insert_idx, (
-                8, mw_pres_10, mw_height, missing, missing,
+                8, mw_pres_mb, mw_height, missing, missing,
                 mw_wdir, mw_wspd
             ))
 
@@ -606,18 +662,18 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
     nlevels_total = num_data_lines + 4  # 4 header lines (254, 1, 2, 3)
 
     # Extract MXWD (max wind pressure) and TROPL (tropopause pressure)
-    # from the FSL lines we already built.
-    mxwd_10 = missing
-    tropl_10 = missing
+    # from the FSL lines we already built.  Pressure in whole mb.
+    mxwd_mb = missing
+    tropl_mb = missing
     if max_wspd_lev is not None:
-        mxwd_10 = int(round(max_wspd_lev['pres_pa'] / 10.0))
+        mxwd_mb = int(round(max_wspd_lev['pres_pa'] / 100.0))
     for fl in fsl_lines:
         if fl[0] == 7:  # tropopause line
-            tropl_10 = fl[1]
+            tropl_mb = fl[1]
             break
 
     outfile.write(
-        f"      2{missing:7d}{mxwd_10:7d}{tropl_10:7d}"
+        f"      2{missing:7d}{mxwd_mb:7d}{tropl_mb:7d}"
         f"{nlevels_total:7d}{missing:7d}{missing:7d}\n"
     )
 
