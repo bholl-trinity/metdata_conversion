@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CD144 to HUSWO Converter</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #8e44ad;
+            padding-bottom: 10px;
+        }
+        .description {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #8e44ad;
+        }
+        .drop-zone {
+            border: 3px dashed #8e44ad;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            background: #f3e8fa;
+            border-color: #6c3483;
+        }
+        .drop-zone p { margin: 5px 0; color: #666; }
+        .drop-zone .icon { font-size: 48px; margin-bottom: 10px; }
+        .options {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .options label { font-weight: bold; color: #666; font-size: 0.85em; }
+        .options select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-left: 8px;
+        }
+        .file-info {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .file-info h3 { margin-top: 0; }
+        .file-info .filename { font-weight: bold; color: #8e44ad; }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .stat-label { color: #666; }
+        .stat-value { font-weight: bold; }
+        button {
+            background: #8e44ad;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+            display: none;
+        }
+        button:hover { background: #6c3483; }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+            white-space: pre-wrap;
+            margin-top: 20px;
+        }
+        .log .info { color: #6a9955; }
+        .log .warn { color: #dcdcaa; }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+    <h1>CD144 to HUSWO Converter</h1>
+    <div class="description">
+        <p>Convert a CD144 <strong>.met</strong> or <strong>.FIL</strong> file to
+        HUSWO format (<strong>.HUS</strong>). Hour 00 of each day is output as
+        hour 24 of the previous day (the first hour-00 record is dropped).</p>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <div class="icon">&#128196;</div>
+        <p><strong>Drag & drop a .met or .FIL file here</strong></p>
+        <p>or click to browse</p>
+    </div>
+    <input type="file" id="fileInput" accept=".met,.FIL,.fil">
+
+    <div class="options" id="options">
+        <label for="century">Century prefix:</label>
+        <select id="century">
+            <option value="19">19xx</option>
+            <option value="20">20xx</option>
+        </select>
+    </div>
+
+    <div class="file-info" id="fileInfo">
+        <h3>File: <span class="filename" id="fileName"></span></h3>
+        <div id="statsContainer"></div>
+    </div>
+
+    <button id="convertBtn">Convert &amp; Download .HUS</button>
+    <div class="log" id="log"></div>
+
+    <script>
+    (function() {
+        const KT_TO_MPH = 1.15078;
+        const HEADER = '  1     2        3    4    5 6    7      8    9  10    11  12     13    14      15     16    17    18     19   20';
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const convertBtn = document.getElementById('convertBtn');
+        const logDiv = document.getElementById('log');
+        const optionsDiv = document.getElementById('options');
+
+        let loadedFile = null;
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) handleFile(fileInput.files[0]);
+        });
+
+        function log(msg, cls) {
+            logDiv.style.display = 'block';
+            const span = document.createElement('span');
+            span.className = cls || '';
+            span.textContent = msg + '\n';
+            logDiv.appendChild(span);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function handleFile(file) {
+            const lowerName = file.name.toLowerCase();
+            if (!lowerName.endsWith('.met') && !lowerName.endsWith('.fil')) {
+                alert('Please select a .met or .FIL file.');
+                return;
+            }
+            logDiv.innerHTML = '';
+            logDiv.style.display = 'none';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const lines = e.target.result.split(/\r?\n/).filter(l => l.length > 0);
+                loadedFile = { name: file.name, lines: lines };
+
+                document.getElementById('fileName').textContent = file.name;
+
+                const stats = document.getElementById('statsContainer');
+                stats.innerHTML = '';
+                function addStat(label, value) {
+                    const row = document.createElement('div');
+                    row.className = 'stat-row';
+                    row.innerHTML = '<span class="stat-label">' + label + '</span>' +
+                        '<span class="stat-value">' + value + '</span>';
+                    stats.appendChild(row);
+                }
+
+                const wban = lines[0].substring(0, 5);
+                const firstDate = lines[0].substring(5, 13);
+                const lastDate = lines[lines.length - 1].substring(5, 13);
+                addStat('WBAN', wban);
+                addStat('Total hours', lines.length);
+                addStat('First record', firstDate);
+                addStat('Last record', lastDate);
+
+                optionsDiv.style.display = 'block';
+                fileInfo.style.display = 'block';
+                convertBtn.style.display = 'inline-block';
+            };
+            reader.readAsText(file);
+        }
+
+        convertBtn.addEventListener('click', function() {
+            if (!loadedFile) return;
+
+            const century = document.getElementById('century').value;
+            const lines = loadedFile.lines;
+            const output = [HEADER];
+            let skipped = 0;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const wban  = line.substring(0, 5);
+                const yy    = line.substring(5, 7);
+                const mm    = line.substring(7, 9);
+                const dd    = line.substring(9, 11);
+                const hh    = line.substring(11, 13);
+                const hour  = parseInt(hh, 10);
+
+                // Hour 00 handling: becomes hour 24 of the previous day
+                let outMM, outDD, outHH;
+                if (hour === 0) {
+                    if (i === 0) { skipped++; continue; } // drop very first hour 00
+                    // Use date from the previous line (hour 23 of prev day)
+                    const prev = lines[i - 1];
+                    outMM = prev.substring(7, 9);
+                    outDD = prev.substring(9, 11);
+                    outHH = '24';
+                } else {
+                    outMM = mm;
+                    outDD = dd;
+                    outHH = hh;
+                }
+
+                // Extract CD144 fields
+                const windDir   = parseInt(line.substring(38, 40), 10); // tens of degrees
+                const windSpd   = parseInt(line.substring(40, 42), 10); // knots
+                const pressure  = line.substring(42, 46);               // 4-char sea level pressure
+                const temp      = line.substring(46, 49);               // 3-char temp (°F)
+
+                // Format temperature: "039" → "039.0"
+                const tempStr = temp + '.0';
+
+                // Format wind direction: 2-digit × 10 → 3-digit string
+                const dirStr = String(windDir * 10).padStart(3, '0');
+
+                // Convert wind speed: knots → mph
+                const mph = windSpd * KT_TO_MPH;
+                const spdStr = mph.toFixed(1).padStart(5, '0');
+
+                // Build HUSWO line (63 chars)
+                const husLine = wban + ' ' +                          // 0-5
+                    century + yy + outMM + outDD + outHH +            // 6-15
+                    '                ' +                              // 16-31 (16 spaces)
+                    tempStr +                                         // 32-36
+                    '            ' +                                  // 37-48 (12 spaces)
+                    pressure +                                        // 49-52
+                    '  ' +                                            // 53-54
+                    dirStr + spdStr;                                  // 55-62
+
+                output.push(husLine);
+            }
+
+            log('Converted ' + (output.length - 1) + ' records, skipped ' + skipped, 'info');
+
+            // Download
+            const outputName = loadedFile.name.replace(/\.(met|FIL|fil)$/i, '.HUS');
+            const blob = new Blob([output.join('\n') + '\n'], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = outputName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            log('Downloaded: ' + outputName, 'info');
+        });
+    })();
+    </script>
+</body>
+</html>
