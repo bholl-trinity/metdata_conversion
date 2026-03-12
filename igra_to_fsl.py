@@ -336,7 +336,68 @@ def _is_mandatory(pres_hpa):
     return False
 
 
-def write_fsl_sounding(outfile, header, levels, station_meta, classic=False):
+def thin_significant_levels(levels, min_spacing_hpa=25.0):
+    """
+    Thin significant levels to reduce high-resolution IGRA data to a density
+    similar to classic FSL files (~50-80 lines per sounding).
+
+    Classic FSL files (e.g., from NOAA/ESRL) contained only mandatory levels
+    plus a curated subset of significant levels, typically spaced ~25 mb apart.
+    IGRA high-resolution data can have levels every 2-3 mb, producing ~300+
+    lines per sounding, which can cause problems with legacy tools like MIXHTS.
+
+    Algorithm: walk through levels sorted by decreasing pressure (surface to
+    top).  Always keep mandatory, surface, tropopause, and wind-only levels.
+    For significant levels (lvltyp1=2), skip any level whose pressure is
+    within min_spacing_hpa of the last kept significant level.
+
+    Args:
+        levels: list of IGRA level dicts (from parse_igra_data_line)
+        min_spacing_hpa: minimum pressure spacing in hPa between kept
+                         significant levels (default 25, matching ABQ median)
+
+    Returns:
+        filtered list of level dicts
+    """
+    kept = []
+    last_kept_pres_hpa = None
+
+    for lev in levels:
+        pres_pa = lev.get('pres_pa')
+        if pres_pa is None:
+            continue
+
+        pres_hpa = pres_pa / 100.0
+
+        # Always keep: surface, tropopause, mandatory, wind-only
+        if lev['lvltyp2'] in (1, 2):  # surface or tropopause
+            kept.append(lev)
+            last_kept_pres_hpa = pres_hpa
+            continue
+        if lev['lvltyp1'] == 1:  # standard/mandatory
+            kept.append(lev)
+            last_kept_pres_hpa = pres_hpa
+            continue
+        if lev['lvltyp1'] == 3:  # wind-only
+            kept.append(lev)
+            continue
+
+        # Significant level (lvltyp1=2) — apply spacing filter
+        if last_kept_pres_hpa is None:
+            kept.append(lev)
+            last_kept_pres_hpa = pres_hpa
+            continue
+
+        spacing = abs(last_kept_pres_hpa - pres_hpa)
+        if spacing >= min_spacing_hpa:
+            kept.append(lev)
+            last_kept_pres_hpa = pres_hpa
+
+    return kept
+
+
+def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
+                       thin=False, min_spacing_hpa=25.0):
     """
     Write a single IGRA sounding in FSL format.
 
@@ -346,6 +407,11 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False):
 
     If classic=True, uses the pre-2000 FSL missing value (32767) instead
     of the modern value (99999).
+
+    If thin=True, applies significant-level thinning to reduce high-resolution
+    IGRA data to a density similar to classic FSL files (~50-80 lines per
+    sounding).  min_spacing_hpa controls the minimum pressure spacing between
+    kept significant levels (default 25 hPa).
 
     Unit conversions from IGRA native units to FSL:
       - Pressure:  Pa → mb×10  (divide by 10)
@@ -362,6 +428,12 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False):
 
     # Filter out levels with no pressure
     levels = [lev for lev in levels if lev['pres_pa'] is not None]
+    if not levels:
+        return False
+
+    # Apply significant-level thinning if requested
+    if thin:
+        levels = thin_significant_levels(levels, min_spacing_hpa)
     if not levels:
         return False
 
@@ -592,6 +664,10 @@ def main():
                         help="Station elevation in meters (default: 0)")
     parser.add_argument("--classic", action="store_true",
                         help="Use classic FSL format (32767 missing value for older EPA tools)")
+    parser.add_argument("--thin", action="store_true",
+                        help="Thin significant levels to match classic FSL density (~50-80 lines/sounding)")
+    parser.add_argument("--min-spacing", type=float, default=25.0,
+                        help="Minimum pressure spacing (hPa) between significant levels when --thin is used (default: 25)")
 
     args = parser.parse_args()
 
@@ -649,7 +725,9 @@ def main():
                 print(f"Location:    {lat:.4f}N, {lon:.4f}E")
                 print()
 
-            wrote = write_fsl_sounding(outfile, header, levels, station_meta, classic=args.classic)
+            wrote = write_fsl_sounding(outfile, header, levels, station_meta,
+                                     classic=args.classic, thin=args.thin,
+                                     min_spacing_hpa=args.min_spacing)
             if wrote:
                 success_count += 1
             else:

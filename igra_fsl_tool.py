@@ -334,7 +334,8 @@ def trim_igra_to_years(input_path, output_path, start_year, end_year):
 # ============================================================================
 
 def convert_igra_to_fsl_by_year(input_path, outdir, station_name, station_meta,
-                                start_year, end_year, classic=False):
+                                start_year, end_year, classic=False,
+                                thin=False, min_spacing_hpa=25.0):
     """
     Convert an IGRA file to FSL, producing per-year and combined output files.
 
@@ -373,7 +374,9 @@ def convert_igra_to_fsl_by_year(input_path, outdir, station_name, station_meta,
                 continue
 
             # Write to combined file
-            wrote = write_fsl_sounding(combined_file, header, levels, station_meta, classic=classic)
+            wrote = write_fsl_sounding(combined_file, header, levels, station_meta,
+                                       classic=classic, thin=thin,
+                                       min_spacing_hpa=min_spacing_hpa)
             if not wrote:
                 continue
             combined_count += 1
@@ -386,7 +389,9 @@ def convert_igra_to_fsl_by_year(input_path, outdir, station_name, station_meta,
                 year_files[year] = open(year_path, 'w')
                 year_counts[year] = 0
 
-            write_fsl_sounding(year_files[year], header, levels, station_meta, classic=classic)
+            write_fsl_sounding(year_files[year], header, levels, station_meta,
+                               classic=classic, thin=thin,
+                               min_spacing_hpa=min_spacing_hpa)
             year_counts[year] += 1
 
             if combined_count % 100 == 0:
@@ -437,6 +442,10 @@ def main():
                         help="Use an existing IGRA file instead of downloading")
     parser.add_argument("--classic", action="store_true",
                         help="Use classic FSL format (32767 missing value for older EPA tools)")
+    parser.add_argument("--thin", action="store_true",
+                        help="Thin significant levels to match classic FSL density (~50-80 lines/sounding)")
+    parser.add_argument("--min-spacing", type=float, default=25.0,
+                        help="Minimum pressure spacing (hPa) between significant levels when --thin is used (default: 25)")
 
     args = parser.parse_args()
 
@@ -535,6 +544,7 @@ def main():
     result = convert_igra_to_fsl_by_year(
         igra_trimmed_path, args.outdir, args.name, station_meta,
         args.start_year, args.end_year, classic=args.classic,
+        thin=args.thin, min_spacing_hpa=args.min_spacing,
     )
     print(f"\r  Converted {result['combined_count']} soundings total")
     print()
