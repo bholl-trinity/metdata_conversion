@@ -29,6 +29,7 @@ FSL format reference:
 """
 
 import argparse
+import math
 import sys
 from datetime import datetime
 
@@ -336,6 +337,77 @@ def _is_mandatory(pres_hpa):
     return False
 
 
+def interpolate_missing_heights(levels):
+    """
+    Fill in missing geopotential heights on IGRA levels using log-pressure
+    interpolation between surrounding levels that have known heights.
+
+    Many IGRA soundings only report heights on mandatory and surface levels,
+    leaving significant levels without heights.  Missing heights cause problems
+    for downstream tools like EPA MIXHTS.exe which may interpret the missing-
+    value sentinel (32767) as an actual height, producing wildly incorrect
+    mixing heights (e.g. 32000+ ft).
+
+    Algorithm: for each level with a known pressure but missing height, find
+    the nearest levels above and below (in pressure) that DO have heights and
+    pressures, then interpolate linearly in log-pressure space:
+
+        z = z_lo + (z_hi - z_lo) * (ln(p_lo) - ln(p)) / (ln(p_lo) - ln(p_hi))
+
+    where p_lo/z_lo is the higher-pressure (lower altitude) anchor and
+    p_hi/z_hi is the lower-pressure (higher altitude) anchor.
+
+    Levels at the top or bottom of the profile that can't be bracketed are
+    left unchanged (still missing).  The original list is modified in place
+    and also returned.
+    """
+    if not levels:
+        return levels
+
+    # Build index of levels that have both pressure and height
+    anchors = []  # list of (index, pressure_pa, height_m)
+    for i, lev in enumerate(levels):
+        if lev['pres_pa'] is not None and lev['gph_m'] is not None:
+            anchors.append((i, lev['pres_pa'], lev['gph_m']))
+
+    if len(anchors) < 2:
+        return levels  # can't interpolate with < 2 anchor points
+
+    # For each level with missing height, interpolate
+    for i, lev in enumerate(levels):
+        if lev['pres_pa'] is None or lev['gph_m'] is not None:
+            continue  # skip levels without pressure or already with height
+
+        p = lev['pres_pa']
+
+        # Find bracketing anchors (nearest below and above in altitude,
+        # i.e. nearest higher-pressure and lower-pressure anchors)
+        lo = None  # higher pressure (below)
+        hi = None  # lower pressure (above)
+        for _idx, a_p, a_z in anchors:
+            if a_p >= p:
+                if lo is None or a_p < lo[0]:
+                    lo = (a_p, a_z)
+            if a_p <= p:
+                if hi is None or a_p > hi[0]:
+                    hi = (a_p, a_z)
+
+        if lo is None or hi is None:
+            continue  # can't bracket this level
+        if lo[0] == hi[0]:
+            continue  # degenerate (same pressure)
+
+        # Log-pressure interpolation
+        ln_p_lo = math.log(lo[0])
+        ln_p_hi = math.log(hi[0])
+        ln_p = math.log(p)
+        frac = (ln_p_lo - ln_p) / (ln_p_lo - ln_p_hi)
+        z_interp = lo[1] + (hi[1] - lo[1]) * frac
+        lev['gph_m'] = int(round(z_interp))
+
+    return levels
+
+
 def thin_significant_levels(levels, min_spacing_hpa=25.0):
     """
     Thin significant levels to reduce high-resolution IGRA data to a density
@@ -430,6 +502,12 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
     levels = [lev for lev in levels if lev['pres_pa'] is not None]
     if not levels:
         return False
+
+    # Interpolate missing geopotential heights from surrounding levels.
+    # Many IGRA soundings only report heights on mandatory/surface levels;
+    # without this, missing heights (written as 32767) cause MIXHTS.exe to
+    # produce wildly incorrect mixing heights.
+    interpolate_missing_heights(levels)
 
     # Apply significant-level thinning if requested
     if thin:
