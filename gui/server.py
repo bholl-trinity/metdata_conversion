@@ -148,7 +148,7 @@ def download_convert():
 
     # Resolve short call signs (e.g. "DTX") to full IGRA IDs
     try:
-        igra_id, call_sign = resolve_station(station)
+        igra_id, call_sign, resolved_wban = resolve_station(station)
         station = igra_id
     except SystemExit:
         return jsonify(error=f"Could not resolve station '{data.get('station')}' to an IGRA ID. "
@@ -200,6 +200,17 @@ def download_convert():
             }
             for k, v in station_meta_overrides.items():
                 station_meta[k] = v
+            # Auto-populate WBAN from ISD history if not provided by user
+            if 'wban' not in station_meta:
+                if resolved_wban:
+                    station_meta['wban'] = resolved_wban
+                else:
+                    from igra_fsl_tool import _lookup_wban_by_wmo
+                    wmo_num = extract_wmo_number(station)
+                    if wmo_num:
+                        looked_up = _lookup_wban_by_wmo(wmo_num)
+                        if looked_up:
+                            station_meta['wban'] = looked_up
             if 'lat' not in station_meta and 'lat' in igra_meta:
                 station_meta['lat'] = igra_meta['lat']
             if 'lon' not in station_meta and 'lon' in igra_meta:
@@ -313,7 +324,9 @@ def wyoming_convert():
     if 'name' not in station_meta:
         station_meta['name'] = station
     if 'wban' not in station_meta:
-        station_meta['wban'] = '99999'
+        from igra_fsl_tool import _lookup_wban_by_wmo
+        looked_up = _lookup_wban_by_wmo(station)
+        station_meta['wban'] = looked_up if looked_up else '99999'
     for k in ('lat', 'lon', 'elev'):
         if k not in station_meta:
             station_meta[k] = 0.0

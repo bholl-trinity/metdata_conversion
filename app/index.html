@@ -437,12 +437,25 @@
                     <option value="cd144">CD144 (.met file for AERMOD/ISC)</option>
                 </select>
             </div>
-            <div class="option-group" id="cd144Options" style="display: none;">
-                <label for="utcOffset">UTC Offset (hours)</label>
-                <input type="number" id="utcOffset" min="-12" max="14" step="1" value="-5">
+            <div class="option-group">
+                <label for="utcOffset">UTC Offset (hours, Local Standard Time)</label>
+                <input type="number" id="utcOffset" min="-12" max="14" step="1" value="-6">
                 <p class="option-hint">
-                    Negative = west of UTC (e.g., -5 for US Eastern, -6 for US Central).<br>
-                    Positive = east of UTC (e.g., +1 for Central European, +8 for China).
+                    Negative = west of UTC (e.g., &minus;5 Eastern, &minus;6 Central, &minus;7 Mountain, &minus;8 Pacific).<br>
+                    Positive = east of UTC (e.g., +1 Central European, +8 China).
+                </p>
+            </div>
+            <div class="option-group" id="yearRangeOptions">
+                <label>Year Range</label>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="number" id="startYear" min="1900" max="2099" placeholder="Start" style="width:90px">
+                    <span>to</span>
+                    <input type="number" id="endYear" min="1900" max="2099" placeholder="End" style="width:90px">
+                </div>
+                <p class="option-hint">
+                    Output will include the full UTC year(s) plus extra hours from the
+                    adjacent year so AERMET has a complete year in local time.
+                    Leave blank to convert the entire file.
                 </p>
             </div>
         </div>

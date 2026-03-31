@@ -140,10 +140,22 @@ def _parse_igra_station_list(text):
     return stations
 
 
+def _download_isd_history():
+    """Download the ISD station history CSV. Returns list of rows or None."""
+    print(f"  Downloading ISD station history...")
+    try:
+        resp = _ssl_get(ISD_HISTORY_URL, timeout=60)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"  Warning: Could not download ISD station history: {e}")
+        return None
+    return list(csv.DictReader(io.StringIO(resp.text)))
+
+
 def _lookup_wmo_by_icao(icao_code):
     """
-    Download the ISD station history CSV and find the WMO (USAF) number
-    for a given ICAO code.  Returns the WMO number string or None.
+    Download the ISD station history CSV and find the USAF and WBAN numbers
+    for a given ICAO code.  Returns (usaf, wban) tuple or (None, None).
     """
     # Normalize: add 'K' prefix for 3-letter US codes
     icao = icao_code.upper()
@@ -151,19 +163,42 @@ def _lookup_wmo_by_icao(icao_code):
         icao = 'K' + icao
 
     print(f"  Looking up ICAO code {icao} in ISD station history...")
-    try:
-        resp = _ssl_get(ISD_HISTORY_URL, timeout=60)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"  Warning: Could not download ISD station history: {e}")
-        return None
+    rows = _download_isd_history()
+    if rows is None:
+        return None, None
 
-    reader = csv.DictReader(io.StringIO(resp.text))
-    for row in reader:
+    for row in rows:
         if row.get('ICAO', '').strip() == icao:
             usaf = row.get('USAF', '').strip()
+            wban = row.get('WBAN', '').strip()
             if usaf and usaf != '999999':
-                return usaf
+                if not wban or wban == '99999':
+                    wban = None
+                return usaf, wban
+    return None, None
+
+
+def _lookup_wban_by_wmo(wmo_5digit):
+    """
+    Look up the WBAN number for a 5-digit WMO station number via the ISD
+    station history CSV.  ISD USAF numbers are typically WMO + trailing digit
+    (usually "0"), so we search for USAF values starting with the WMO number.
+    Returns the WBAN string or None.
+    """
+    wmo = str(int(wmo_5digit))  # strip leading zeros
+    print(f"  Looking up WBAN for WMO {wmo} in ISD station history...")
+    rows = _download_isd_history()
+    if rows is None:
+        return None
+
+    for row in rows:
+        usaf = row.get('USAF', '').strip()
+        if usaf.startswith(wmo):
+            wban = row.get('WBAN', '').strip()
+            if wban and wban != '99999':
+                print(f"  Found WBAN {wban} (USAF {usaf})")
+                return wban
+    print(f"  Warning: No WBAN found for WMO {wmo}")
     return None
 
 
@@ -175,20 +210,21 @@ def resolve_station(station_input):
       - Full IGRA ID (e.g., USM00072632) — returned as-is
       - Short call sign (e.g., DTX or KDTX) — looked up via ISD → WMO → IGRA
 
-    Returns (igra_id, call_sign) where call_sign is the short identifier
-    (useful as a default for --name), or (igra_id, None) for direct IDs.
+    Returns (igra_id, call_sign, wban) where call_sign is the short identifier
+    (useful as a default for --name), wban is the WBAN station number looked up
+    from the ISD history (or None), or (igra_id, None, None) for direct IDs.
     """
     station_input = station_input.strip()
 
     # If it already looks like a full IGRA ID, use it directly
     if re.match(r'^[A-Z]{2}[A-Z0-9]{9}$', station_input.upper()) and len(station_input) == 11:
-        return station_input.upper(), None
+        return station_input.upper(), None, None
 
     # Short identifier — try to resolve via ISD ICAO → WMO → IGRA
     call_sign = station_input.upper().lstrip('K') if len(station_input) == 4 else station_input.upper()
 
-    wmo = _lookup_wmo_by_icao(station_input)
-    if not wmo:
+    usaf, wban = _lookup_wmo_by_icao(station_input)
+    if not usaf:
         print(f"  Error: Could not find WMO number for '{station_input}'.")
         print(f"  Try providing the full IGRA station ID (e.g., USM00072632).")
         sys.exit(1)
@@ -196,13 +232,14 @@ def resolve_station(station_input):
     # Build candidate IGRA ID: USM000<WMO> (standard for US WMO-numbered stations)
     # ISD USAF numbers are 6 digits (WMO + trailing digit, usually "0").
     # IGRA uses 5-digit WMO numbers, so strip the trailing digit if 6-digit.
-    wmo_digits = str(int(wmo))
+    wmo_digits = str(int(usaf))
     if len(wmo_digits) == 6:
         wmo_5 = wmo_digits[:5]
     else:
         wmo_5 = wmo_digits
     candidate = f"USM000{int(wmo_5):05d}"
-    print(f"  Resolved {station_input} -> USAF {wmo} -> WMO {wmo_5} -> IGRA {candidate}")
+    wban_msg = f", WBAN {wban}" if wban else ""
+    print(f"  Resolved {station_input} -> USAF {usaf} -> WMO {wmo_5}{wban_msg} -> IGRA {candidate}")
 
     # Verify the candidate exists in the IGRA station list
     print(f"  Verifying against IGRA station list...")
@@ -213,24 +250,24 @@ def resolve_station(station_input):
     except Exception as e:
         print(f"  Warning: Could not verify against IGRA station list: {e}")
         print(f"  Proceeding with {candidate} (unverified)")
-        return candidate, call_sign
+        return candidate, call_sign, wban
 
     # Exact match
     for s in igra_stations:
         if s['id'] == candidate:
             print(f"  Confirmed: {candidate} ({s['name']})")
-            return candidate, call_sign
+            return candidate, call_sign, wban
 
     # Fallback: search all IGRA IDs for this WMO number
     wmo_pattern = re.compile(rf'M000{int(wmo_5):05d}$')
     for s in igra_stations:
         if wmo_pattern.search(s['id']):
             print(f"  Found: {s['id']} ({s['name']})")
-            return s['id'], call_sign
+            return s['id'], call_sign, wban
 
-    print(f"  Warning: WMO {wmo} not found in IGRA station list.")
+    print(f"  Warning: WMO {usaf} not found in IGRA station list.")
     print(f"  Proceeding with {candidate} (may not have data)")
-    return candidate, call_sign
+    return candidate, call_sign, wban
 
 
 # ============================================================================
@@ -456,7 +493,7 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
 
     # Resolve short call signs (e.g., "DTX") to full IGRA IDs
-    igra_id, call_sign = resolve_station(args.station)
+    igra_id, call_sign, resolved_wban = resolve_station(args.station)
     args.station = igra_id
 
     # Default --name to the call sign if provided, otherwise derive from IGRA ID
@@ -488,6 +525,16 @@ def main():
     }
     if args.wban:
         station_meta['wban'] = args.wban
+    elif resolved_wban:
+        station_meta['wban'] = resolved_wban
+        print(f"  WBAN:       {resolved_wban} (from ISD history)")
+    else:
+        # Direct IGRA ID path — try looking up WBAN by WMO number
+        wmo_num = extract_wmo_number(args.station)
+        if wmo_num:
+            looked_up_wban = _lookup_wban_by_wmo(wmo_num)
+            if looked_up_wban:
+                station_meta['wban'] = looked_up_wban
     if args.lat is not None:
         station_meta['lat'] = args.lat
     elif 'lat' in igra_meta:

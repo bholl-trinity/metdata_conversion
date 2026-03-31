@@ -50,11 +50,9 @@ mappingInfo.querySelector('h3').addEventListener('click', () => {
 outputFormatSelect.addEventListener('change', function() {
     selectedFormat = this.value;
     if (selectedFormat === 'cd144') {
-        cd144Options.style.display = 'block';
         convertBtn.textContent = 'Convert to CD144';
         outputTab.textContent = 'Output (CD144)';
     } else {
-        cd144Options.style.display = 'none';
         convertBtn.textContent = 'Convert to ISD';
         outputTab.textContent = 'Output (ISD)';
     }
@@ -159,6 +157,12 @@ async function processFile(file) {
             const startDate = `${firstRecord.Year}-${String(firstRecord.Month).padStart(2, '0')}-${String(firstRecord.Day).padStart(2, '0')}`;
             const endDate = `${lastRecord.Year}-${String(lastRecord.Month).padStart(2, '0')}-${String(lastRecord.Day).padStart(2, '0')}`;
             document.getElementById('dateRange').textContent = `${startDate} to ${endDate}`;
+
+            // Auto-suggest most recent complete year for year range fields
+            const lastFullYear = lastRecord.Month === 12 && lastRecord.Day === 31
+                ? lastRecord.Year : lastRecord.Year - 1;
+            document.getElementById('endYear').placeholder = lastFullYear;
+            document.getElementById('startYear').placeholder = lastFullYear;
         }
 
         fileInfo.classList.add('visible');
@@ -206,12 +210,71 @@ async function startConversion() {
 }
 
 /**
- * ISD conversion (existing logic)
+ * Build a UTC date range filter that includes the full UTC year(s) plus
+ * extra hours from the adjacent year so AERMET has a complete year in
+ * local standard time.
+ *
+ * Western hemisphere (utcOffset < 0): pad END into next year.
+ *   e.g. UTC-6 for 2025: include Jan 1 2026 hours 00-05 UTC
+ * Eastern hemisphere (utcOffset > 0): pad START from previous year.
+ *   e.g. UTC+8 for 2025: include Dec 31 2024 hours 16-23 UTC
+ *
+ * Returns { startUTC: Date, endUTC: Date } or null if no filtering.
+ */
+function buildDateFilter(startYear, endYear, utcOffset) {
+    if (!startYear || !endYear) return null;
+
+    // Base: full UTC year range
+    const startUTC = new Date(Date.UTC(startYear, 0, 1, 0, 0));    // Jan 1 00:00 UTC
+    const endUTC   = new Date(Date.UTC(endYear, 11, 31, 23, 59));   // Dec 31 23:59 UTC
+
+    if (utcOffset < 0) {
+        // Western hemisphere: last local hour of Dec 31 = Jan 1 at hour |offset|-1 UTC
+        endUTC.setTime(Date.UTC(endYear + 1, 0, 1, Math.abs(utcOffset) - 1, 59));
+    } else if (utcOffset > 0) {
+        // Eastern hemisphere: first local hour of Jan 1 = Dec 31 at hour 24-offset UTC
+        startUTC.setTime(Date.UTC(startYear - 1, 11, 31, 24 - utcOffset, 0));
+    }
+
+    return { startUTC, endUTC };
+}
+
+/**
+ * Check if a GHCNh record falls within the date filter range.
+ */
+function recordInRange(record, filter) {
+    if (!filter) return true;
+    const recUTC = Date.UTC(record.Year, record.Month - 1, record.Day, record.Hour || 0, record.Minute || 0);
+    return recUTC >= filter.startUTC.getTime() && recUTC <= filter.endUTC.getTime();
+}
+
+/**
+ * ISD conversion with optional year range + timezone padding
  */
 async function startISDConversion(startTime) {
     let converted = 0;
     let skipped = 0;
+    let filtered = 0;
     const outputLines = [];
+
+    // Read year range and UTC offset
+    const startYearVal = document.getElementById('startYear').value;
+    const endYearVal = document.getElementById('endYear').value;
+    const utcOffset = parseInt(document.getElementById('utcOffset').value, 10) || 0;
+
+    const startYear = startYearVal ? parseInt(startYearVal, 10) : null;
+    const endYear = endYearVal ? parseInt(endYearVal, 10) : (startYear || null);
+
+    const dateFilter = buildDateFilter(startYear, endYear, utcOffset);
+
+    if (dateFilter) {
+        const padDesc = utcOffset < 0
+            ? `+ first ${Math.abs(utcOffset)}h of ${endYear + 1}`
+            : utcOffset > 0
+                ? `+ last ${utcOffset}h of ${startYear - 1}`
+                : '';
+        progressText.textContent = `Filtering to ${startYear}-${endYear} UTC ${padDesc}...`;
+    }
 
     const chunkSize = 1000;
     const totalRecords = ghcnhData.records.length;
@@ -220,6 +283,10 @@ async function startISDConversion(startTime) {
         const chunk = ghcnhData.records.slice(i, i + chunkSize);
 
         for (const record of chunk) {
+            if (!recordInRange(record, dateFilter)) {
+                filtered++;
+                continue;
+            }
             try {
                 const isdLine = GHCNhToISD.convertRecordToISD(record);
                 if (isdLine) {
@@ -246,7 +313,11 @@ async function startISDConversion(startTime) {
     isdOutput = outputLines.join('\n');
     cd144Files = null;
 
-    document.getElementById('statRecords').textContent = converted.toLocaleString();
+    let recordsLabel = converted.toLocaleString();
+    if (filtered > 0) {
+        recordsLabel += ` (${filtered.toLocaleString()} outside range)`;
+    }
+    document.getElementById('statRecords').textContent = recordsLabel;
     document.getElementById('statSkipped').textContent = skipped.toLocaleString();
     document.getElementById('statOutputSize').textContent = formatFileSize(isdOutput.length);
     document.getElementById('statTime').textContent = duration + 's';
@@ -348,7 +419,15 @@ function downloadISD() {
     let filename = 'converted.ish';
     if (currentFile) {
         const baseName = currentFile.name.replace(/\.[^/.]+$/, '');
-        filename = baseName + '.ish';
+        const startYearVal = document.getElementById('startYear').value;
+        const endYearVal = document.getElementById('endYear').value;
+        if (startYearVal) {
+            const sy = startYearVal;
+            const ey = endYearVal || sy;
+            filename = baseName + '_' + sy + (ey !== sy ? '-' + ey : '') + '.ish';
+        } else {
+            filename = baseName + '.ish';
+        }
     }
 
     downloadBlob(isdOutput, filename);
