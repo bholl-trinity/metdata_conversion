@@ -17,9 +17,11 @@
  * @param {number} utcOffset - Signed hours from UTC (negative = west, e.g., -5 for US Eastern)
  * @param {string} inputFilename - Original input filename for output naming
  * @param {function} progressCallback - Optional (current, total) => void
+ * @param {number} [startYear] - Optional start year filter (local time)
+ * @param {number} [endYear] - Optional end year filter (local time)
  * @returns {{ files: Array<{year, output, filename}>, converted: number, skipped: number, total: number }}
  */
-function convertGHCNhToCD144(ghcnhText, utcOffset, inputFilename, progressCallback) {
+function convertGHCNhToCD144(ghcnhText, utcOffset, inputFilename, progressCallback, startYear, endYear) {
     // Step 1: Parse using shared function
     var data = GHCNhToISD.parseGHCNh(ghcnhText);
 
@@ -40,6 +42,15 @@ function convertGHCNhToCD144(ghcnhText, utcOffset, inputFilename, progressCallba
     }
 
     var years = Object.keys(yearsSet).map(Number).sort();
+
+    // Step 4b: Filter years to requested range (if specified)
+    if (startYear && endYear) {
+        years = years.filter(function(y) { return y >= startYear && y <= endYear; });
+    } else if (startYear) {
+        years = years.filter(function(y) { return y >= startYear; });
+    } else if (endYear) {
+        years = years.filter(function(y) { return y <= endYear; });
+    }
 
     // Step 5: For each year, build grid, assign records, format lines
     var files = [];

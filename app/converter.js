@@ -354,11 +354,17 @@ async function startCD144Conversion(startTime) {
         const text = await currentFile.text();
         const inputFilename = currentFile ? currentFile.name : 'output.met';
 
+        // Read year range filter
+        const startYearVal = document.getElementById('startYear').value;
+        const endYearVal = document.getElementById('endYear').value;
+        const startYear = startYearVal ? parseInt(startYearVal, 10) : null;
+        const endYear = endYearVal ? parseInt(endYearVal, 10) : (startYear || null);
+
         const result = GHCNhToCD144.convertGHCNhToCD144(text, utcOffset, inputFilename, function(current, total) {
             const pct = Math.min(100, Math.round((current / total) * 100));
             progressFill.style.width = pct + '%';
             progressText.textContent = 'Building CD144 hourly grid... ' + pct + '%';
-        });
+        }, startYear, endYear);
 
         const endTime = performance.now();
         const duration = ((endTime - startTime) / 1000).toFixed(2);
