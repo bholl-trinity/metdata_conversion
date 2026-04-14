@@ -276,10 +276,13 @@ function formatCD144StationPressure(pressureHpa) {
  * Returns "   " if no ceiling (FEW/SCT only or clear)
  */
 function formatCD144CeilingHeight(record) {
+    // Layers 1-3 exist in all GHCNh vintages; layer 4 was added in the newer
+    // export schema. Header names are normalized upstream in parseGHCNh.
     var coverFields = [
         { cover: record.sky_cover_1, height: record.sky_cover_baseht_1 },
         { cover: record.sky_cover_2, height: record.sky_cover_baseht_2 },
-        { cover: record.sky_cover_3, height: record.sky_cover_baseht_3 }
+        { cover: record.sky_cover_3, height: record.sky_cover_baseht_3 },
+        { cover: record.sky_cover_4, height: record.sky_cover_baseht_4 }
     ];
 
     // Find the lowest BKN/OVC/VV layer (first one found, since they're ordered low to high)
@@ -333,7 +336,7 @@ function formatCD144RelativeHumidity(record) {
  * Returns "0" (clear) if no cloud data (e.g. CAVOK hours)
  */
 function formatCD144CloudCover(record) {
-    var coverFields = [record.sky_cover_1, record.sky_cover_2, record.sky_cover_3];
+    var coverFields = [record.sky_cover_1, record.sky_cover_2, record.sky_cover_3, record.sky_cover_4];
     var maxOktas = -1;
     var hasAnyCover = false;
 

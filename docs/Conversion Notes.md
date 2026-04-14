@@ -12,7 +12,25 @@ The converter supports two output formats:
  
 ### What we output: GA only
  
-The converter outputs **GA (Sky Cover Layer)** records derived from the GHCNh `sky_cover_1`, `sky_cover_2`, and `sky_cover_3` fields along with their corresponding base heights.
+The converter outputs **GA (Sky Cover Layer)** records derived from the GHCNh sky cover columns along with their corresponding base heights. Up to **four** GA records (GA1–GA4) are emitted per observation, one per reported layer.
+
+### GHCNh sky cover column schemas
+
+Two column-name schemas have been observed in GHCNh PSV exports:
+
+**Older exports (3 layers):**
+- `sky_cover_1`, `sky_cover_2`, `sky_cover_3` — coverage codes (e.g. `FEW:02`, `SCT:04`, `OVC:08`)
+- `sky_cover_baseht_1/2/3` — base heights in meters
+
+**Newer exports (4 layers, split into two column families):**
+- `sky_cover_layer_1..4` + `sky_cover_layer_baseht_1..4` — carry SYNOP-style ceiling data (height only, no coverage code)
+- `sky_cover_summation_1..4` + `sky_cover_summation_baseht_1..4` — carry METAR/SPECI layer observations (coverage + height)
+
+In newer files the two families are **complementary, not redundant**: for any given observation, the cloud data typically lives in exactly one of them. METAR/SPECI records populate `sky_cover_summation_*`; SYNOP records populate only `sky_cover_layer_baseht_*` (no coverage code, just a ceiling height).
+
+The converter normalizes these aliases at parse time (`normalizeSkyCoverAliases` in `ghcnh-to-isd.js`) onto canonical `sky_cover_N` / `sky_cover_baseht_N` keys, preferring `sky_cover_summation_*` over `sky_cover_layer_*` when both are populated. Downstream code reads only the canonical names, so output is identical regardless of input vintage.
+
+> **Why this matters:** Before the aliasing was added, newer GHCNh files appeared to have empty sky cover in every record (the old `sky_cover_N` columns no longer exist), causing the "empty sky cover = clear" fallback to fire for every hour. When that output was fed to AERMET, every hour became 0/8ths cloud cover.
  
 ### What we intentionally DO NOT output: GD, GE, GF
  

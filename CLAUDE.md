@@ -9,27 +9,29 @@
 
 **Name:** metdata_conversion (meteorological data conversion toolkit)
 **Owner:** bholl-trinity
-**Primary language:** Python (stable), Rust (in-progress rewrite)
-**Domain:** EPA air quality dispersion modeling — specifically, preparing meteorological
-input files for EPA's AERMET/AERMOD modeling system.
+**Primary language:** Python (CLI tools + Flask GUI), JavaScript (browser converters)
+**Domain:** EPA air quality dispersion modeling — preparing meteorological input
+files for EPA's AERMET/AERMOD modeling system.
+
+> **History note:** This repo previously contained a full AERMET automation tool
+> (Python `aermet/` + Rust `aermet-tool/` rewrite). Those were moved to their own
+> dedicated repository in commit `37cd640` (2026-03-31). What remains here is the
+> collection of format-conversion tools and upper-air CLI utilities.
 
 ---
 
 ## What This Project Does
 
-This toolkit helps EPA AERMOD air dispersion modelers prepare meteorological input
-files. It automates the complex workflow of:
+This toolkit provides focused format-conversion utilities for AERMOD modelers:
 
-1. Discovering nearby weather stations (surface + upper air)
-2. Downloading meteorological data from NOAA/NCEI
-3. Converting between formats (GHCNh -> ISD, IGRA -> FSL, etc.)
-4. Running EPA preprocessing utilities (AERMET, AERSURFACE, AERMINUTE)
-5. Assessing data completeness
-6. Producing production-ready .SFC and .PFL files for AERMOD
+1. Convert NCEI GHCNh data to ISD (for AERMET ingestion) or CD144 (for AERMOD/ISC)
+2. Gap-fill CD144 files
+3. Convert CD144 to HUSWO
+4. Convert upper-air soundings (IGRA, University of Wyoming) to FSL format
 
 **Key insight:** AERMET doesn't yet support the modern GHCNh format from NCEI.
-This tool bridges that gap by converting GHCNh to ISD format automatically.
-When EPA updates AERMET to read GHCNh natively, the conversion step can be removed.
+The browser-based GHCNh -> ISD converter bridges that gap. When EPA updates
+AERMET to read GHCNh natively, that converter can be retired.
 
 ---
 
@@ -38,71 +40,35 @@ When EPA updates AERMET to read GHCNh natively, the conversion step can be remov
 ```
 metdata_conversion/
 ├── CLAUDE.md                          # THIS FILE - read first
+├── README.md                          # User-facing overview
 ├── .gitignore                         # Ignores: *.fsl, *.log, __pycache__, gui/output/
 ├── .github/workflows/pages.yml        # GitHub Pages deployment (for app/)
 │
-├── aermet/                            # PRIMARY: Python/Flask AERMET automation tool
-│   ├── server.py                      # Flask app - REST API + serves UI
-│   ├── launch.bat                     # Windows launcher (checks Python, installs deps)
-│   ├── requirements.txt               # flask, requests, certifi
-│   ├── README.md                      # User-facing documentation
-│   ├── core/                          # Backend modules
-│   │   ├── geocode.py                 # Address/airport/lat-lon -> coordinates
-│   │   ├── stations.py                # Station discovery (GHCNh, ISD, IGRA from NCEI)
-│   │   ├── download.py                # Data download orchestration
-│   │   ├── ghcnh_to_isd.py            # GHCNh PSV -> ISD fixed-width converter
-│   │   ├── igra.py                    # IGRA download, parse, trim by year
-│   │   ├── http.py                    # Shared HTTP client with SSL fallback
-│   │   ├── project.py                 # Project workspace management (UUID dirs)
-│   │   ├── completeness.py            # SFC file quality assessment
-│   │   ├── aermet_runner.py           # AERMET control file generation + execution
-│   │   ├── aersurface.py              # AERSURFACE control file + execution
-│   │   ├── aerminute.py               # AERMINUTE 1-minute wind processing
-│   │   └── __init__.py
-│   ├── static/                        # Frontend (HTML/JS/CSS wizard UI)
-│   ├── data/                          # Cached station inventories (auto-downloaded)
-│   └── projects/                      # Per-run working directories
-│
-├── aermet-tool/                       # SECONDARY: Rust rewrite (in progress)
-│   ├── Cargo.toml                     # axum, tokio, reqwest, rust-embed, serde, etc.
-│   ├── src/                           # Direct port of Python modules to Rust
-│   │   ├── main.rs                    # Entry: port discovery, browser launch
-│   │   ├── server.rs                  # HTTP routes (axum) - largest file ~28KB
-│   │   ├── ghcnh_to_isd.rs            # GHCNh converter (~25KB)
-│   │   ├── aermet_runner.rs           # Control file gen + subprocess
-│   │   ├── stations.rs                # Station discovery
-│   │   ├── completeness.rs            # SFC parsing
-│   │   ├── download.rs                # Download orchestration
-│   │   ├── geocode.rs                 # Geocoding
-│   │   ├── project.rs                 # Project state (JSON)
-│   │   ├── aersurface.rs              # AERSURFACE logic
-│   │   ├── aerminute.rs               # AERMINUTE logic
-│   │   ├── igra.rs                    # IGRA handling
-│   │   └── http_client.rs             # Shared reqwest client
-│   ├── static/                        # Embedded frontend (same UI)
-│   └── data/                          # Embedded airports.csv
-│
-├── app/                               # LEGACY: Client-side converter (GitHub Pages)
+├── app/                               # PRIMARY: Browser-based converters (GitHub Pages)
 │   ├── index.html                     # UI with file drop zone
 │   ├── converter.js                   # Event handlers, UI orchestration
-│   ├── ghcnh-to-isd.js               # JS version of GHCNh->ISD (~33KB)
-│   ├── ghcnh-to-cd144.js             # GHCNh->CD144 format (~16KB)
+│   ├── ghcnh-to-isd.js                # GHCNh PSV -> ISD fixed-width (~33KB)
+│   ├── ghcnh-to-cd144.js              # GHCNh PSV -> CD144 (~16KB)
 │   ├── gap-fill.html                  # CD144 gap-filling tool
-│   └── cd144-to-huswo.html            # CD144->HUSWO converter
+│   ├── cd144-to-huswo.html            # CD144 -> HUSWO converter
+│   └── launch.bat                     # Windows launcher (opens index.html)
 │
-├── gui/                               # Legacy Flask UI for gap-fill tool
-│   ├── server.py                      # Simple Flask server
-│   └── static/                        # Gap-fill HTML/CSS
+├── gui/                               # Flask wrapper for CLI upper-air tools
+│   ├── server.py                      # Imports igra_to_fsl/igra_fsl_tool/uwyo_to_fsl
+│   ├── static/                        # Gap-fill HTML/CSS
+│   └── output/                        # Generated files (gitignored)
 │
-├── igra_to_fsl.py                     # CLI: IGRA v2 -> FSL format (815 lines)
-├── igra_fsl_tool.py                   # CLI: Download IGRA + convert to FSL (596 lines)
-├── uwyo_to_fsl.py                     # CLI: Wyoming upper air -> FSL (357 lines)
-├── "IGRA to FSL Converter.bat"        # Windows launcher for gap-fill tool
+├── igra_to_fsl.py                     # CLI: IGRA v2 -> FSL format
+├── igra_fsl_tool.py                   # CLI: Download IGRA by call sign + convert to FSL
+├── uwyo_to_fsl.py                     # CLI: Wyoming upper air -> FSL
+├── "IGRA to FSL Converter.bat"        # Windows launcher for the Flask gap-fill UI
 │
 ├── docs/                              # Design & reference documentation
 │   ├── Conversion Notes.md            # AUTHORITATIVE format conversion reference
-│   ├── aermet-automation-plan.md      # Full design spec for aermet/ tool
-│   └── rust-rewrite-plan.md           # Rust port strategy & milestones
+│   ├── ghcnh_DOCUMENTATION.rtf        # NCEI GHCNh format spec
+│   ├── isd-format-document.rtf        # NCEI ISD format spec
+│   ├── aermet-automation-plan.md      # Historical: design spec for the removed aermet/ tool
+│   └── rust-rewrite-plan.md           # Historical: Rust port plan for the removed aermet-tool/
 │
 └── samples/                           # Test/example data files
     ├── KSYR_*.psv                     # GHCNh sample files
@@ -114,149 +80,179 @@ metdata_conversion/
 
 ## The Two Main Components
 
-### 1. AERMET Automation Tool (`aermet/` — Python, stable)
+### 1. Browser Converters (`app/` — JavaScript, deployed to GitHub Pages)
 
-A locally-run Flask web app with a 6-step wizard UI:
+Vanilla HTML/JS/CSS (no framework, no build step) that runs entirely client-side.
+Deployed to GitHub Pages via `.github/workflows/pages.yml`. Four tools:
 
-1. **Location** — Enter address, lat/lon, or airport code
-2. **Stations** — Discover & select surface (GHCNh/ISD) + upper air (IGRA) stations
-3. **Download** — Fetch data from NCEI (GHCNh auto-converted to ISD)
-4. **Land Use** — Run AERSURFACE (US: NLCD GeoTIFF) or enter manual params (non-US)
-5. **Run AERMET** — Execute all 3 stages per year
-6. **Results** — Completeness table + downloadable .SFC/.PFL files
+- **GHCNh -> ISD** (`ghcnh-to-isd.js`) — primary converter
+- **GHCNh -> CD144** (`ghcnh-to-cd144.js`)
+- **CD144 gap-fill** (`gap-fill.html`)
+- **CD144 -> HUSWO** (`cd144-to-huswo.html`)
 
-**Dependencies:** flask, requests, certifi (that's it)
-**Launch:** `python server.py` or double-click `launch.bat` on Windows
-**EPA executables required:** aermet.exe, aersurface.exe (optional), aerminute.exe (optional) in `bin/`
+### 2. Upper-Air CLI Tools + Flask GUI (`gui/` wraps the root `*.py` scripts)
 
-### 2. Rust Rewrite (`aermet-tool/` — in progress)
+The three root-level Python scripts are the engines; `gui/server.py` imports
+them and exposes a simple Flask UI. Launch via `"IGRA to FSL Converter.bat"`
+or `python gui/server.py` (opens http://localhost:5001).
 
-Same functionality as the Python version, compiled to a single binary.
-**Same API contract** — the frontend works unchanged with either backend.
-Uses axum (HTTP), tokio (async), reqwest (HTTP client), rust-embed (static files).
-Release profile: `opt-level = "z"`, LTO, stripped — targeting ~10-15MB binary.
-EPA executables are embedded in the binary and extracted to `~/.aermet-tool/bin/` on first run.
+- `igra_to_fsl.py` — IGRA v2 -> FSL, with date range filtering & metadata overrides
+- `igra_fsl_tool.py` — Look up IGRA station from 3-letter call sign, download, convert
+  - Auto-looks up WBAN from ISD history CSV (as of commit 37cd640)
+- `uwyo_to_fsl.py` — Download 12Z soundings from U. Wyoming (rate-limited, 3s/request)
+
+**Dependencies:** flask, requests, certifi
 
 ---
 
 ## Critical Domain Knowledge
 
-### Data Sources
-| Source | Format | Used For | Downloaded From |
-|--------|--------|----------|-----------------|
-| GHCNh | Pipe-separated values (PSV) | Surface observations | NCEI |
-| ISD | Fixed-width (variable length) | AERMET surface input | Converted from GHCNh |
-| IGRA | Fixed-width text | Upper air soundings | NCEI (AERMET reads natively) |
-| TD-3505 | ASOS 1-minute data | AERMINUTE input | NCEI |
-| NLCD | GeoTIFF | Land use (AERSURFACE) | User-provided |
-| FSL | Fixed-width text | Upper air (alternative) | Converted from IGRA or Wyoming |
+### Data Sources & Formats
+| Source | Format | Used For | Notes |
+|--------|--------|----------|-------|
+| GHCNh | Pipe-separated values (PSV) | Surface observations | From NCEI |
+| ISD (ISHD) | Fixed-width (variable length) | AERMET surface input | Converted from GHCNh |
+| CD144 | Fixed-width, 79 chars/line | AERMOD/ISC surface input | Converted from GHCNh |
+| HUSWO | Fixed-width | Alternative surface format | Converted from CD144 |
+| IGRA v2 | Fixed-width text | Upper air soundings | From NCEI |
+| FSL | Fixed-width text | Upper air (AERMET-compatible) | Converted from IGRA or Wyoming |
 
 ### GHCNh -> ISD Conversion (the core algorithm)
 
-This is the most complex and important code in the repo. Key rules:
+This is the most complex code in the repo. It lives in `app/ghcnh-to-isd.js`.
+See `docs/Conversion Notes.md` for the authoritative spec. Key rules:
 
-1. **Cloud cover: GA only** — Only output GA (Sky Cover Layer) records. Do NOT generate GD/GE/GF records. GHCNh only has raw observations, not derived layers.
+1. **Cloud cover: GA only, up to 4 layers** — Only output GA (Sky Cover Layer)
+   records, GA1-GA4. Do NOT generate GD/GE/GF records. GHCNh only has raw
+   observations, not derived layers. See `Conversion Notes.md:11-33`.
 
-2. **SYNOP sky cover fill** — FM-12 SYNOP reports often have blank sky cover. The converter looks back up to 45 minutes for valid sky cover data from the same station. This prevents missing-value problems downstream.
+2. **GHCNh sky cover column aliases** — Newer GHCNh exports split the old
+   `sky_cover_N` columns into two families: `sky_cover_summation_N` (METAR
+   observations — coverage + height) and `sky_cover_layer_N` (SYNOP ceiling
+   heights — height only, no coverage). These are complementary, not
+   redundant. `parseGHCNh` coalesces both families onto canonical
+   `sky_cover_N` / `sky_cover_baseht_N` keys via `normalizeSkyCoverAliases`.
+   **Missing this aliasing causes every output hour to fall back to
+   clear-sky (0 oktas),** which is what AERMET then reports as "all zero
+   cloud cover." See `Conversion Notes.md` sky cover section.
 
-3. **Empty sky cover = clear** — If all `sky_cover_1/2/3` are empty (not explicitly "CLR"), output `GA1005+999999999` (0/8ths clear, quality=5, missing height).
+3. **SYNOP sky cover fill** — FM-12 SYNOP reports often have blank sky cover.
+   The converter looks back up to 45 minutes for valid sky cover from the same
+   station. See `Conversion Notes.md:35-48`.
 
-4. **Negative Fahrenheit** — Temps below 0F use "X" prefix: -4F -> `X04`. Clamped to -99F (`X99`). Zero is space-padded (`  0`).
+4. **Empty sky cover = clear** — If all `sky_cover_1/2/3/4` are empty (not
+   explicitly "CLR"), output `GA1005+999999999` (0/8ths clear, quality=5,
+   missing height).
 
-5. **Calm wind direction** — When wind speed is 0 or code includes "C-Calm", direction is `00` (not 360 or missing).
+5. **Okta mapping** — CLR/`:00`→00, FEW→01-02, SCT→03-04, BKN→05-07, OVC→08.
+   VV (vertical visibility) is treated as 8 oktas for ceiling purposes.
 
-6. **Unit conversions:**
+6. **Year range + UTC offset padding** (added in 37cd640) — Converter accepts
+   a year range and UTC offset. Output includes the full UTC year *plus* extra
+   hours from the adjacent year so AERMET has complete data once converted to
+   local standard time. Western hemisphere pads the end; eastern hemisphere
+   pads the start. Leave the year blank to convert the entire file.
+
+7. **Negative Fahrenheit** — Temps below 0F use "X" prefix: -4F -> `X04`.
+   Clamped to -99F (`X99`). Zero is space-padded (`  0`).
+
+8. **Calm wind direction** — When wind speed is 0 or code includes "C-Calm",
+   direction is `00` (not 360 or missing).
+
+9. **Unit conversions:**
    - Temperature: C -> F (with rounding rules)
    - Wind speed: m/s -> knots
    - Pressure: Pa -> hPa (divide by 100)
    - Cloud base height: meters (no conversion needed for GA)
    - Cloud cover: oktas (0-8 scale)
 
-7. **Hourly assignment** — Observations are assigned to local hours. Prefers METAR over SYNOP when both exist for same hour.
+10. **Hourly assignment** — Observations are assigned to local hours. Prefers
+    METAR over SYNOP when both exist for the same hour.
 
-8. **RH calculation** — If relative humidity field is empty, calculate from dewpoint temperature using Magnus formula.
+11. **RH calculation** — If the relative humidity field is empty, calculate
+    from dewpoint temperature using the Magnus formula.
 
-### IGRA Handling
-- Downloads full-history files from NCEI (can be very large)
-- Parses text headers (`#StationID Year Mo Dy Hr ...`) to find year boundaries
-- Extracts only needed years (avoids parsing entire file)
-- AERMET reads IGRA format natively (no conversion needed)
+### GHCNh -> CD144 Conversion
 
-### Completeness Assessment
-- Evaluated from **final .SFC output**, not raw inputs
-- An hour is valid if sensible heat flux is not a missing-value code
-- **Calm wind hours (zero speed) ARE valid** — do not count as missing
-- Checked on quarterly or annual basis per user specification
-- AERMET runs per-year even for multi-year requests (for quality checking)
+Separate implementation in `app/ghcnh-to-cd144.js`. Fixed-width 79 chars/line,
+8760 lines/year (8784 for leap years). See `Conversion Notes.md:68+`. Notable:
 
-### Station Discovery
-- Downloads & caches station inventories from NCEI
-- Filters by distance from project location and date range overlap
-- Ranks by proximity and historical completeness
-- User can refine station coordinates on satellite map (critical for AERSURFACE accuracy)
+- **No daylight saving time** — uses a fixed UTC offset provided by the user.
+- **Year-boundary crossings** — if the UTC-to-local shift moves a record
+  across a year boundary, separate output files are generated per year.
+- **Hourly selection** — within a local hour, prefer the observation with the
+  highest minute value (METAR :54 beats SYNOP :00).
+- **Ceiling** — lowest BKN/OVC/VV layer. FEW/SCT only -> ceiling blank; cloud
+  cover present but no ceiling -> 22000 (unlimited).
 
----
-
-## Standalone CLI Tools (Root Directory)
-
-These are independent utilities, not part of the AERMET automation wizard:
-
-- **`igra_to_fsl.py`** — Converts IGRA v2 fixed-width format to FSL text format. Supports date range filtering, station metadata overrides. FSL line types: 254, 1, 2, 3, 4, 5, 6, 7, 9.
-
-- **`igra_fsl_tool.py`** — Automated download + conversion: looks up IGRA station from 3-letter call sign (e.g., "DTX"), downloads full history, converts to FSL with per-year and combined output files.
-
-- **`uwyo_to_fsl.py`** — Downloads 12Z soundings from University of Wyoming archive and converts to FSL. Rate-limited (3s between requests to be polite).
+### IGRA -> FSL Conversion
+- Parses IGRA v2 fixed-width format; FSL line types 254, 1, 2, 3, 4, 5, 6, 7, 9.
+- `igra_fsl_tool.py` auto-downloads by 3-letter call sign (e.g., "DTX"),
+  trims by year, writes per-year and combined output files.
+- **WBAN auto-lookup** (37cd640): type-1 headers look up WBAN from ISD history
+  CSV instead of writing 99999. `--wban` still overrides manually.
 
 ---
 
 ## Important Gotchas & Quirks
 
-1. **No unit tests exist.** All modules are testable but there are zero tests. If adding tests, GHCNh parsing edge cases, unit conversions, and IGRA trimming are highest priority.
+1. **No unit tests exist.** Highest-value candidates if adding tests: GHCNh
+   parsing edge cases, unit conversions, IGRA year trimming, SYNOP sky-cover
+   backfill window.
 
-2. **Three parallel implementations of GHCNh->ISD exist:** JavaScript (`app/ghcnh-to-isd.js`), Python (`aermet/core/ghcnh_to_isd.py`), and Rust (`aermet-tool/src/ghcnh_to_isd.rs`). Changes to conversion logic must be synchronized across all three (or at minimum Python and Rust).
+2. **GHCNh -> ISD lives only in JavaScript now.** The Python and Rust parallel
+   implementations were removed with the `aermet/` and `aermet-tool/` trees in
+   commit 37cd640. If logic changes, there's only one place to change:
+   `app/ghcnh-to-isd.js`.
 
-3. **SSL/TLS fallback chain** — HTTP client tries certifi -> system default -> unverified (with warning). Handles machines with outdated CA bundles.
+3. **SSL/TLS fallback chain** (Python side) — HTTP client tries certifi ->
+   system default -> unverified (with warning). Handles machines with
+   outdated CA bundles.
 
-4. **Project workspaces use UUID-based directories** — Each run gets a unique 8-char hex ID. All intermediate files are preserved for debugging.
+4. **CD144 time zone: NO daylight saving time** — Uses fixed UTC offset
+   provided by user. If the offset moves a record across a year boundary,
+   separate output files are generated per year.
 
-5. **EPA utilities are Windows-only .exe files** — Users must provide them. The Rust version embeds them in the binary.
+5. **GHCNh station list is fixed-width** — Specific column positions. Must
+   strip leading zeros correctly.
 
-6. **CD144 time zone: NO daylight saving time** — Uses fixed UTC offset provided by user. No automatic DST. If offset moves a record across a year boundary, separate output files are generated.
+6. **Large file handling** — GHCNh downloads can be 100+ MB. Python side uses
+   streaming (`iter_content(chunk_size=65536)`) with progress callbacks.
+   Browser side processes directly from the drop-zone File object.
 
-7. **GHCNh station list is fixed-width** — Specific column positions. Must strip leading zeros correctly.
+7. **`app/` deploys to GitHub Pages** via `.github/workflows/pages.yml`. Any
+   change there ships the next time `main` is pushed.
 
-8. **Large file handling** — GHCNh downloads can be 100+ MB. Uses streaming (`iter_content(chunk_size=65536)`) with progress callbacks.
+8. **Windows batch files** handle Python-not-on-PATH gracefully with
+   `where python` checks.
 
-9. **The `app/` directory is deployed to GitHub Pages** via `.github/workflows/pages.yml`. It's the original client-side converter, now somewhat superseded by the AERMET automation tool but still useful as a standalone converter.
+9. **University of Wyoming rate limiting** — `uwyo_to_fsl.py` sleeps 3s
+   between requests. Don't remove this; it's there to be a good citizen.
 
-10. **Windows batch files** handle Python-not-on-PATH gracefully with `where python` checks.
+10. **Historical docs in `docs/`** — `aermet-automation-plan.md` and
+    `rust-rewrite-plan.md` describe tooling that no longer lives in this repo
+    (moved to a dedicated repo). They are retained for reference but are not
+    actionable against this codebase.
 
 ---
 
 ## Development Patterns
 
-### Python (aermet/)
-- Flask REST API with JSON responses
-- Thread-safe in-memory progress tracking for long operations
-- Each core module is standalone and importable
-- `server.py` is the only entry point — imports everything from `core/`
-- No ORM, no database — project state is flat JSON files
+### Frontend (app/)
+- Vanilla HTML/JS/CSS. No framework. No build step. No package.json.
+- Files are loaded as plain `<script>` tags from `index.html`.
+- Each converter exposes functions on `window` that `converter.js` calls.
 
-### Rust (aermet-tool/)
-- axum routes mirror Flask routes exactly (same URLs, same JSON shapes)
-- Static files embedded at compile time via `rust-embed`
-- Async throughout (tokio runtime)
-- Each `.rs` module maps 1:1 to a Python `core/*.py` module
-
-### Frontend
-- Vanilla HTML/JS/CSS (no framework, no build step)
-- Same frontend served by both Python and Rust backends
-- Wizard-style multi-step UI with progress indicators
+### Python (root + gui/)
+- Each root script is standalone and usable from the CLI or imported.
+- `gui/server.py` imports from the root scripts — the Flask layer is a thin
+  wrapper, not a reimplementation.
+- No ORM, no database; outputs go to `gui/output/` (gitignored).
 
 ---
 
 ## Git & CI
-- **Default branch:** main (remote), master (local tracking may differ)
+- **Default branch:** `main`
 - **CI:** GitHub Pages deployment only (`.github/workflows/pages.yml`)
 - **No automated tests in CI** (no tests exist)
 - **.gitignore:** `*.fsl`, `*.log`, `__pycache__/`, `*.pyc`, `gui/output/`
@@ -266,31 +262,34 @@ These are independent utilities, not part of the AERMET automation wizard:
 ## Key Documentation Files
 
 Read these for deep dives:
-- **`docs/Conversion Notes.md`** — THE authoritative reference for all format conversions. Read this before touching any converter code.
-- **`docs/aermet-automation-plan.md`** — Complete design spec with all 20+ API endpoints, workflow steps, and architecture decisions.
-- **`docs/rust-rewrite-plan.md`** — Rust port strategy, binary size targets, 9-day implementation plan.
-- **`aermet/README.md`** — User-facing quick start guide.
+- **`docs/Conversion Notes.md`** — THE authoritative reference for every format
+  conversion and edge case. Read this before touching any converter.
+- **`docs/ghcnh_DOCUMENTATION.rtf`** — NCEI's GHCNh format spec (source of truth
+  for field names and codes).
+- **`docs/isd-format-document.rtf`** — NCEI's ISD/ISHD format spec.
+- **`docs/aermet-automation-plan.md`** / **`docs/rust-rewrite-plan.md`** —
+  Historical. Describe tooling now in a separate repo. Do not use as a guide
+  for work in this repo.
 
 ---
 
 ## Common Tasks
 
-### Adding a new format conversion
-1. Read `docs/Conversion Notes.md` for format specs
-2. Implement in Python (`aermet/core/`) first
-3. Port to Rust (`aermet-tool/src/`) with identical behavior
-4. If client-side needed, add JS version in `app/`
-5. Add sample data in `samples/`
-
 ### Modifying GHCNh -> ISD conversion
-1. **Read `docs/Conversion Notes.md` first** — it documents every edge case
-2. Update Python (`aermet/core/ghcnh_to_isd.py`)
-3. Update Rust (`aermet-tool/src/ghcnh_to_isd.rs`)
-4. Update JS (`app/ghcnh-to-isd.js`) if the client-side tool is still maintained
-5. Test with sample files in `samples/`
+1. **Read `docs/Conversion Notes.md` first** — it documents every edge case.
+2. Edit `app/ghcnh-to-isd.js`.
+3. Test with sample files in `samples/` (especially `KSYR_*.psv` + the
+   `ISH and CD144 sample KSYR/` worked examples).
+4. Pushing to `main` deploys the change to GitHub Pages automatically.
 
-### Adding an API endpoint
-1. Add route in `aermet/server.py`
-2. Add corresponding handler in `aermet-tool/src/server.rs`
-3. Update frontend in `aermet/static/` and `aermet-tool/static/`
-4. Document in `docs/aermet-automation-plan.md`
+### Modifying GHCNh -> CD144 conversion
+1. Read `docs/Conversion Notes.md` (CD144 section, from ~line 68).
+2. Edit `app/ghcnh-to-cd144.js`.
+3. Test with `samples/CD144/` worked examples.
+
+### Adding/changing an upper-air CLI tool
+1. Edit the relevant root script (`igra_to_fsl.py`, `igra_fsl_tool.py`,
+   or `uwyo_to_fsl.py`).
+2. If the Flask GUI needs the new capability, update `gui/server.py`
+   (it imports from the root scripts — no duplication).
+3. Test from CLI first, then through the GUI.

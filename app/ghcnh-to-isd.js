@@ -30,10 +30,73 @@ function parseGHCNh(text) {
             record[headers[j]] = values[j];
         }
 
+        // Coalesce sky cover aliases so downstream code can always read
+        // record.sky_cover_N and record.sky_cover_baseht_N regardless of
+        // which GHCNh export vintage produced the file.
+        normalizeSkyCoverAliases(record);
+
         records.push(record);
     }
 
     return { headers, records };
+}
+
+/**
+ * Coalesce GHCNh sky cover column aliases onto the canonical sky_cover_N /
+ * sky_cover_baseht_N keys (plus a few accompanying metadata fields used
+ * elsewhere by the converter).
+ *
+ * GHCNh column schemas encountered:
+ *   - Older exports:   sky_cover_N,         sky_cover_baseht_N           (N = 1..3)
+ *   - Newer exports:   sky_cover_layer_N,   sky_cover_layer_baseht_N     (N = 1..4)
+ *                      sky_cover_summation_N, sky_cover_summation_baseht_N (N = 1..4)
+ *
+ * In newer files the two new families are COMPLEMENTARY rather than redundant:
+ *   - METAR / SPECI (FM-15 / FM-16) cloud data lives in sky_cover_summation_*
+ *     (has coverage codes like SCT:04, OVC:08 plus heights).
+ *   - SYNOP (FM-12) ceiling heights live in sky_cover_layer_baseht_* with no
+ *     corresponding coverage value.
+ *
+ * For each layer we fill the canonical sky_cover_N from whichever new-schema
+ * family has data (summation preferred, since it's where the METAR observations
+ * land), falling back to the legacy name. Same for *_baseht_N.
+ *
+ * A few companion fields (Measurement_Code, Quality_Code, Source_Station_ID,
+ * etc.) are also coalesced because they're referenced downstream (e.g. ICAO
+ * identifier extraction from sky_cover_1_Source_Station_ID).
+ */
+function normalizeSkyCoverAliases(record) {
+    const suffixes = [
+        '',
+        '_Measurement_Code',
+        '_Quality_Code',
+        '_Report_Type',
+        '_Source_Code',
+        '_Source_Station_ID'
+    ];
+
+    const coalesce = (canonicalKey, summKey, layerKey) => {
+        if (record[canonicalKey] && record[canonicalKey] !== '') return;
+        const summ = record[summKey];
+        if (summ && summ !== '') { record[canonicalKey] = summ; return; }
+        const lyr = record[layerKey];
+        if (lyr && lyr !== '') record[canonicalKey] = lyr;
+    };
+
+    for (let n = 1; n <= 4; n++) {
+        for (const suffix of suffixes) {
+            coalesce(
+                'sky_cover_' + n + suffix,
+                'sky_cover_summation_' + n + suffix,
+                'sky_cover_layer_' + n + suffix
+            );
+            coalesce(
+                'sky_cover_baseht_' + n + suffix,
+                'sky_cover_summation_baseht_' + n + suffix,
+                'sky_cover_layer_baseht_' + n + suffix
+            );
+        }
+    }
 }
 
 /**
@@ -351,10 +414,12 @@ function formatCeiling(record) {
     }
 
     // Find ceiling (BKN, OVC, or VV layer - 5/8 or more coverage)
+    // Newer GHCNh exports provide up to 4 layers; older ones provide 3.
     const coverFields = [
         { cover: record.sky_cover_1, height: record.sky_cover_baseht_1 },
         { cover: record.sky_cover_2, height: record.sky_cover_baseht_2 },
-        { cover: record.sky_cover_3, height: record.sky_cover_baseht_3 }
+        { cover: record.sky_cover_3, height: record.sky_cover_baseht_3 },
+        { cover: record.sky_cover_4, height: record.sky_cover_baseht_4 }
     ];
 
     // Ceiling is the lowest BKN, OVC, or VV layer
@@ -514,12 +579,14 @@ function buildAdditionalDataSection(record) {
         }
     }
 
-    // GA1-GA3 - Sky cover layers
+    // GA1-GA4 - Sky cover layers
     // Format: GA1 + coverage(2) + quality(1) + height(6,signed) + cloud_type(2) + type_quality(1)
+    // Newer GHCNh exports provide up to 4 layers; older ones provide 3.
     const skyCoverFields = [
         { cover: record.sky_cover_1, height: record.sky_cover_baseht_1 },
         { cover: record.sky_cover_2, height: record.sky_cover_baseht_2 },
-        { cover: record.sky_cover_3, height: record.sky_cover_baseht_3 }
+        { cover: record.sky_cover_3, height: record.sky_cover_baseht_3 },
+        { cover: record.sky_cover_4, height: record.sky_cover_baseht_4 }
     ];
 
     // Check if all sky_cover fields are empty
@@ -772,6 +839,8 @@ function getRecordTimestamp(record) {
  * Copy sky_cover fields from source record to target record
  */
 function copySkyCoverFields(target, source) {
+    // Layers 1-3 exist in all GHCNh vintages; layer 4 was added in the newer
+    // export schema. Header names have already been normalized at parse time.
     const skyCoverFields = [
         'sky_cover_1', 'sky_cover_1_Measurement_Code', 'sky_cover_1_Quality_Code',
         'sky_cover_1_Report_Type', 'sky_cover_1_Source_Code', 'sky_cover_1_Source_Station_ID',
@@ -784,7 +853,11 @@ function copySkyCoverFields(target, source) {
         'sky_cover_3', 'sky_cover_3_Measurement_Code', 'sky_cover_3_Quality_Code',
         'sky_cover_3_Report_Type', 'sky_cover_3_Source_Code', 'sky_cover_3_Source_Station_ID',
         'sky_cover_baseht_3', 'sky_cover_baseht_3_Measurement_Code', 'sky_cover_baseht_3_Quality_Code',
-        'sky_cover_baseht_3_Report_Type', 'sky_cover_baseht_3_Source_Code', 'sky_cover_baseht_3_Source_Station_ID'
+        'sky_cover_baseht_3_Report_Type', 'sky_cover_baseht_3_Source_Code', 'sky_cover_baseht_3_Source_Station_ID',
+        'sky_cover_4', 'sky_cover_4_Measurement_Code', 'sky_cover_4_Quality_Code',
+        'sky_cover_4_Report_Type', 'sky_cover_4_Source_Code', 'sky_cover_4_Source_Station_ID',
+        'sky_cover_baseht_4', 'sky_cover_baseht_4_Measurement_Code', 'sky_cover_baseht_4_Quality_Code',
+        'sky_cover_baseht_4_Report_Type', 'sky_cover_baseht_4_Source_Code', 'sky_cover_baseht_4_Source_Station_ID'
     ];
 
     for (const field of skyCoverFields) {
