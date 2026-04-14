@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFC to CD144 Converter</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #2980b9;
+            padding-bottom: 10px;
+        }
+        .description {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2980b9;
+        }
+        .drop-zone {
+            border: 3px dashed #2980b9;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            background: #e8f4fc;
+            border-color: #1a6fa0;
+        }
+        .drop-zone p { margin: 5px 0; color: #666; }
+        .drop-zone .icon { font-size: 48px; margin-bottom: 10px; }
+        .options {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .option-group label {
+            display: block;
+            font-weight: bold;
+            color: #666;
+            font-size: 0.85em;
+            margin-bottom: 5px;
+        }
+        .option-group select,
+        .option-group input {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .option-hint {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+        .file-info {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .file-info h3 { margin-top: 0; }
+        .file-info .filename { font-weight: bold; color: #2980b9; }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .stat-label { color: #666; }
+        .stat-value { font-weight: bold; }
+        button {
+            background: #2980b9;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+            display: none;
+        }
+        button:hover { background: #1a6fa0; }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+            white-space: pre-wrap;
+            margin-top: 20px;
+        }
+        .log .info { color: #6a9955; }
+        .log .warn { color: #dcdcaa; }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+    <h1>SFC to CD144 Converter</h1>
+    <div class="description">
+        <p>Convert an AERMET surface output (<strong>.SFC</strong>) file to
+        CD144 format (<strong>.met</strong>). The SFC file must contain hourly
+        data already in local standard time (as produced by AERMET Stage 3).</p>
+        <p>Ceiling height is left blank because SFC files only carry total cloud
+        cover, not individual layer heights.</p>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <div class="icon">&#128196;</div>
+        <p><strong>Drag & drop a .SFC file here</strong></p>
+        <p>or click to browse</p>
+    </div>
+    <input type="file" id="fileInput" accept=".sfc,.SFC">
+
+    <div class="options" id="options">
+        <div class="options-grid">
+            <div class="option-group">
+                <label for="stationId">Station ID (5-digit USAF)</label>
+                <input type="text" id="stationId" maxlength="5" placeholder="e.g. 72519">
+                <p class="option-hint">Required. The 5-digit USAF station code for CD144 output.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="file-info" id="fileInfo">
+        <h3>File: <span class="filename" id="fileName"></span></h3>
+        <div id="statsContainer"></div>
+    </div>
+
+    <button id="convertBtn">Convert &amp; Download .met</button>
+    <div class="log" id="log"></div>
+
+    <script>
+    (function() {
+        var dropZone = document.getElementById('dropZone');
+        var fileInput = document.getElementById('fileInput');
+        var fileInfo = document.getElementById('fileInfo');
+        var convertBtn = document.getElementById('convertBtn');
+        var logDiv = document.getElementById('log');
+        var optionsDiv = document.getElementById('options');
+
+        var loadedFile = null;
+
+        dropZone.addEventListener('click', function() { fileInput.click(); });
+        dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('dragover'); });
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', function() {
+            if (fileInput.files.length) handleFile(fileInput.files[0]);
+        });
+
+        function log(msg, cls) {
+            logDiv.style.display = 'block';
+            var span = document.createElement('span');
+            span.className = cls || '';
+            span.textContent = msg + '\n';
+            logDiv.appendChild(span);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        /* --------------------------------------------------------
+         *  Parse SFC header line
+         * -------------------------------------------------------- */
+        function parseSFCHeader(line) {
+            var info = {};
+            // Latitude / Longitude
+            var latMatch = line.match(/([\d.]+)([NS])/);
+            var lonMatch = line.match(/([\d.]+)([EW])/);
+            if (latMatch) info.lat = (latMatch[2] === 'S' ? '-' : '') + latMatch[1];
+            if (lonMatch) info.lon = (lonMatch[2] === 'W' ? '-' : '') + lonMatch[1];
+
+            var uaMatch = line.match(/UA_ID:\s*(\S+)/);
+            var sfMatch = line.match(/SF_ID:\s*(\S+)/);
+            if (uaMatch) info.uaId = uaMatch[1];
+            if (sfMatch) info.sfId = sfMatch[1];
+            return info;
+        }
+
+        /* --------------------------------------------------------
+         *  Parse a single SFC data line (whitespace-delimited)
+         *  Returns an object with named fields or null if invalid
+         * -------------------------------------------------------- */
+        function parseSFCLine(line) {
+            var parts = line.trim().split(/\s+/);
+            if (parts.length < 25) return null;
+
+            return {
+                year:       parseInt(parts[0], 10),   // 2-digit
+                month:      parseInt(parts[1], 10),
+                day:        parseInt(parts[2], 10),
+                julianDay:  parseInt(parts[3], 10),
+                hour:       parseInt(parts[4], 10),    // 1-24
+                heatFlux:   parseFloat(parts[5]),
+                fricVel:    parseFloat(parts[6]),
+                convVelSc:  parseFloat(parts[7]),
+                vertPotTG:  parseFloat(parts[8]),
+                convMixHt:  parseFloat(parts[9]),
+                mechMixHt:  parseFloat(parts[10]),
+                moninOb:    parseFloat(parts[11]),
+                surfRough:  parseFloat(parts[12]),
+                bowenRatio: parseFloat(parts[13]),
+                albedo:     parseFloat(parts[14]),
+                windSpeed:  parseFloat(parts[15]),     // m/s
+                windDir:    parseFloat(parts[16]),      // degrees
+                windMeasHt: parseFloat(parts[17]),
+                tempK:      parseFloat(parts[18]),      // Kelvin
+                tempMeasHt: parseFloat(parts[19]),
+                precipType: parseInt(parts[20], 10),
+                precipRate: parseFloat(parts[21]),
+                rh:         parseFloat(parts[22]),      // %
+                pressure:   parseFloat(parts[23]),      // mb (hPa)
+                cloudCover: parseInt(parts[24], 10),    // tenths (0-10)
+                windSrc:    parts[25] || ''
+            };
+        }
+
+        /* --------------------------------------------------------
+         *  Unit conversion helpers
+         * -------------------------------------------------------- */
+
+        /** Celsius to Fahrenheit, rounded to integer */
+        function celsiusToF(c) {
+            return Math.round(c * 9 / 5 + 32);
+        }
+
+        /**
+         * Dewpoint (Celsius) from temperature (Celsius) and RH (%).
+         * Uses the Magnus formula inverse.
+         */
+        function dewpointC(tempC, rhPct) {
+            if (rhPct <= 0) return NaN;
+            var gamma = Math.log(rhPct / 100) + (17.625 * tempC) / (243.04 + tempC);
+            return 243.04 * gamma / (17.625 - gamma);
+        }
+
+        /* --------------------------------------------------------
+         *  CD144 field formatters
+         *  Match the conventions in ghcnh-to-cd144.js
+         * -------------------------------------------------------- */
+
+        /** Temperature: 3 chars, '-' prefix for negative, zero-padded */
+        function fmtTemp(tempK) {
+            if (isNaN(tempK) || tempK < 150) return '   '; // sentinel / missing
+            var f = celsiusToF(tempK - 273.15);
+            if (f < 0) {
+                var abs = Math.min(Math.abs(f), 99);
+                return '-' + String(abs).padStart(2, '0');
+            }
+            return String(f).padStart(3, '0');
+        }
+
+        /** Dewpoint: 3 chars, derived from temp (K) and RH (%) */
+        function fmtDewpoint(tempK, rhPct) {
+            if (isNaN(tempK) || tempK < 150 || isNaN(rhPct) || rhPct < 0 || rhPct > 100) return '   ';
+            var tC = tempK - 273.15;
+            var dpC = dewpointC(tC, rhPct);
+            if (isNaN(dpC)) return '   ';
+            var f = celsiusToF(dpC);
+            if (f < 0) {
+                var abs = Math.min(Math.abs(f), 99);
+                return '-' + String(abs).padStart(2, '0');
+            }
+            return String(f).padStart(3, '0');
+        }
+
+        /** Wind direction: degrees -> tens of degrees, 2 chars. 0 deg = 36. */
+        function fmtWindDir(dirDeg, speedMs) {
+            // Calm: direction = 00
+            if (!isNaN(speedMs) && Math.round(speedMs * 1.94384) === 0) return '00';
+            if (isNaN(dirDeg) || dirDeg < 0 || dirDeg > 360) return '  ';
+            var tens = Math.round(dirDeg / 10);
+            if (tens === 0) tens = 36;
+            return String(tens).padStart(2, '0');
+        }
+
+        /** Wind speed: m/s -> knots, 2 chars */
+        function fmtWindSpd(speedMs) {
+            if (isNaN(speedMs) || speedMs < 0) return '  ';
+            var knots = Math.round(speedMs * 1.94384);
+            if (knots > 99) knots = 99;
+            return String(knots).padStart(2, '0');
+        }
+
+        /** Station pressure: mb (hPa) -> inHg x 100, 4 chars */
+        function fmtPressure(mb) {
+            if (isNaN(mb) || mb < 500 || mb > 1100) return '    ';
+            var inHg100 = Math.round(mb * 2.953);
+            return String(inHg100).padStart(4, '0');
+        }
+
+        /** Relative humidity: %, 3 chars */
+        function fmtRH(rhPct) {
+            if (isNaN(rhPct) || rhPct < 0 || rhPct > 100) return '   ';
+            return String(Math.round(rhPct)).padStart(3, '0');
+        }
+
+        /** Cloud cover: tenths (0-10) -> 1 char. 10 = '-' */
+        function fmtCloud(tenths) {
+            if (isNaN(tenths) || tenths < 0 || tenths > 10) return ' ';
+            if (tenths === 10) return '-';
+            return String(tenths);
+        }
+
+        /* --------------------------------------------------------
+         *  Build a 79-char CD144 line
+         * -------------------------------------------------------- */
+        function buildCD144Line(stn5, rec) {
+            // Date/time header (13 chars)
+            var yy  = String(rec.year).padStart(2, '0');
+            var mm  = String(rec.month).padStart(2, '0');
+            var dd  = String(rec.day).padStart(2, '0');
+            var hh  = String(rec.hour - 1).padStart(2, '0'); // SFC 1-24 -> CD144 00-23
+            var header = stn5 + yy + mm + dd + hh;           // 13 chars
+
+            var ceiling = '   ';                              // 14-16: no ceiling in SFC
+            var blank1  = '                   ';              // 17-35: 19 spaces
+            var dp      = fmtDewpoint(rec.tempK, rec.rh);    // 36-38
+            var wdir    = fmtWindDir(rec.windDir, rec.windSpeed); // 39-40
+            var wspd    = fmtWindSpd(rec.windSpeed);          // 41-42
+            var pres    = fmtPressure(rec.pressure);          // 43-46
+            var temp    = fmtTemp(rec.tempK);                 // 47-49
+            var blank2  = '   ';                              // 50-52
+            var rh      = fmtRH(rec.rh);                     // 53-55
+            var cloud   = fmtCloud(rec.cloudCover);           // 56
+            var blank3  = '                       ';          // 57-79: 23 spaces
+
+            var line = header + ceiling + blank1 + dp + wdir + wspd + pres + temp + blank2 + rh + cloud + blank3;
+
+            // Ensure exactly 79 chars
+            if (line.length < 79) line = line + ' '.repeat(79 - line.length);
+            else if (line.length > 79) line = line.slice(0, 79);
+            return line;
+        }
+
+        /* --------------------------------------------------------
+         *  File load handler
+         * -------------------------------------------------------- */
+        function handleFile(file) {
+            var lowerName = file.name.toLowerCase();
+            if (!lowerName.endsWith('.sfc')) {
+                alert('Please select a .SFC file.');
+                return;
+            }
+            logDiv.innerHTML = '';
+            logDiv.style.display = 'none';
+
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var lines = e.target.result.split(/\r?\n/).filter(function(l) { return l.trim().length > 0; });
+                if (lines.length < 2) {
+                    alert('File appears empty or has no data lines.');
+                    return;
+                }
+
+                var headerInfo = parseSFCHeader(lines[0]);
+                var dataLines = lines.slice(1);
+
+                // Parse first and last data lines for summary
+                var first = parseSFCLine(dataLines[0]);
+                var last  = parseSFCLine(dataLines[dataLines.length - 1]);
+
+                loadedFile = { name: file.name, lines: lines };
+
+                document.getElementById('fileName').textContent = file.name;
+                var stats = document.getElementById('statsContainer');
+                stats.innerHTML = '';
+
+                function addStat(label, value) {
+                    var row = document.createElement('div');
+                    row.className = 'stat-row';
+                    row.innerHTML = '<span class="stat-label">' + label + '</span>' +
+                        '<span class="stat-value">' + value + '</span>';
+                    stats.appendChild(row);
+                }
+
+                if (headerInfo.lat && headerInfo.lon) {
+                    addStat('Location', headerInfo.lat + ', ' + headerInfo.lon);
+                }
+                if (headerInfo.uaId) addStat('Upper Air ID', headerInfo.uaId);
+                if (headerInfo.sfId) addStat('Surface ID', headerInfo.sfId);
+                addStat('Data records', dataLines.length);
+
+                if (first && last) {
+                    addStat('First record', String(first.month).padStart(2, '0') + '/' +
+                        String(first.day).padStart(2, '0') + '/' +
+                        String(first.year).padStart(2, '0') + ' hour ' + first.hour);
+                    addStat('Last record', String(last.month).padStart(2, '0') + '/' +
+                        String(last.day).padStart(2, '0') + '/' +
+                        String(last.year).padStart(2, '0') + ' hour ' + last.hour);
+                }
+
+                optionsDiv.style.display = 'block';
+                fileInfo.style.display = 'block';
+                convertBtn.style.display = 'inline-block';
+            };
+            reader.readAsText(file);
+        }
+
+        /* --------------------------------------------------------
+         *  Convert button handler
+         * -------------------------------------------------------- */
+        convertBtn.addEventListener('click', function() {
+            if (!loadedFile) return;
+
+            var stationId = document.getElementById('stationId').value.trim();
+            if (!/^\d{5}$/.test(stationId)) {
+                alert('Please enter a valid 5-digit USAF station ID.');
+                return;
+            }
+
+            logDiv.innerHTML = '';
+            logDiv.style.display = 'none';
+
+            var lines = loadedFile.lines;
+            var dataLines = lines.slice(1); // skip header
+            var output = [];
+            var warnings = 0;
+
+            for (var i = 0; i < dataLines.length; i++) {
+                var rec = parseSFCLine(dataLines[i]);
+                if (!rec) {
+                    warnings++;
+                    log('Warning: could not parse line ' + (i + 2) + ', skipping', 'warn');
+                    continue;
+                }
+                output.push(buildCD144Line(stationId, rec));
+            }
+
+            log('Converted ' + output.length + ' records to CD144 format.', 'info');
+            if (warnings > 0) {
+                log(warnings + ' line(s) could not be parsed and were skipped.', 'warn');
+            }
+
+            // Download
+            var outputName = loadedFile.name.replace(/\.sfc$/i, '.met');
+            var blob = new Blob([output.join('\n') + '\n'], { type: 'text/plain' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = outputName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            log('Downloaded: ' + outputName, 'info');
+        });
+    })();
+    </script>
+</body>
+</html>
