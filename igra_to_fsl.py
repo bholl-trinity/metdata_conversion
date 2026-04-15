@@ -575,12 +575,34 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
 
             # After the surface, emit any mandatory levels that are
             # below the surface (higher pressure = below ground).
+            # Classic FSL reference files (e.g., ABQ23.rao from NOAA/ESRL)
+            # fill the height field on these below-ground mandatory levels
+            # using hydrostatic extrapolation from the surface, leaving
+            # T/dewpt/wind as missing.  Downstream tools like MIXHTS.exe
+            # misinterpret 32767 as a real height, which breaks the
+            # morning mixing-height "lower height" interpolation and
+            # produces the exact error users have reported.  We therefore
+            # always emit a valid hydrostatic height:
+            #     H(p) = H_surf + (R/g) * T * ln(P_surf / p)
+            # with R/g = 29.27 m/K.  For p > P_surf, ln(...) is negative,
+            # so the emitted height is always below the surface height.
             if surface_pres_hpa is not None:
+                import math
+                surf_h = lev['gph_m']
+                surf_t_k = (lev['temp_10c'] / 10.0 + 273.15) \
+                    if lev['temp_10c'] is not None else 288.15
                 for m in MANDATORY_LEVELS:
                     if m > surface_pres_hpa + 0.5:
                         mandatory_emitted.add(m)
+                        if surf_h is not None:
+                            below_h = int(round(
+                                surf_h + 29.27 * surf_t_k
+                                * math.log(surface_pres_hpa / m)
+                            ))
+                        else:
+                            below_h = missing
                         fsl_lines.append((
-                            4, m, missing, missing,
+                            4, m, below_h, missing,
                             missing, missing, missing
                         ))
             continue
