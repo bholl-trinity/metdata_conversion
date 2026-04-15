@@ -488,6 +488,23 @@ def write_fsl_sounding(outfile, header, levels, station_meta, classic=False,
     # Interpolate missing geopotential heights (classic FSL files always had them)
     _interpolate_heights(levels)
 
+    # Ensure surface level is identified.  IGRA data occasionally lacks the
+    # lvltyp2=1 surface flag (~0.3-0.5% of soundings across stations).  When
+    # missing, the first level (highest pressure) is at the station elevation
+    # and should be treated as the surface.  We only promote it if it carries
+    # real observed temperature, and if we know the station elevation we verify
+    # the candidate is within 100 m of it.  This must run BEFORE thinning so
+    # the promoted level is protected by the lvltyp2==1 guard in
+    # thin_significant_levels.
+    if not any(lev['lvltyp2'] == 1 for lev in levels):
+        candidate = levels[0]
+        can_promote = candidate['temp_10c'] is not None
+        elev_m = station_meta.get('elev')
+        if can_promote and elev_m is not None and candidate['gph_m'] is not None:
+            can_promote = abs(candidate['gph_m'] - elev_m) <= 100
+        if can_promote:
+            candidate['lvltyp2'] = 1
+
     # Apply significant-level thinning if requested
     if thin:
         levels = thin_significant_levels(levels, min_spacing_hpa)
