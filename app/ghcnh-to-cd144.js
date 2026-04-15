@@ -459,10 +459,11 @@ function formatCD144Line(stationId, year, month, day, hour, record) {
     // Column 56: Total cloud cover (1 char)
     var cloud = formatCD144CloudCover(record);
 
-    // Columns 57-79: Padding (23 spaces)
-    var blank3 = '                       ';
+    // Columns 57-78: Padding (22 spaces)
+    var blank3 = '                      ';
 
-    var line = header + ceiling + blank1 + dewpoint + windDir + windSpd + pressure + temp + blank2 + rh + cloud + blank3;
+    // Column 79: Duplicate of cloud cover (column 56)
+    var line = header + ceiling + blank1 + dewpoint + windDir + windSpd + pressure + temp + blank2 + rh + cloud + blank3 + cloud;
 
     // Safety: ensure exactly 79 chars
     if (line.length < 79) {
