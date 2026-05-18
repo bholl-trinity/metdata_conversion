@@ -30,15 +30,69 @@ function parseGHCNh(text) {
             record[headers[j]] = values[j];
         }
 
-        // Coalesce sky cover aliases so downstream code can always read
-        // record.sky_cover_N and record.sky_cover_baseht_N regardless of
-        // which GHCNh export vintage produced the file.
+        // Coalesce schema aliases so downstream code can always read the
+        // canonical keys regardless of which GHCNh export vintage produced
+        // the file.
+        normalizeIdentityAliases(record);
         normalizeSkyCoverAliases(record);
 
         records.push(record);
     }
 
     return { headers, records };
+}
+
+/**
+ * Coalesce top-level identity column aliases onto the canonical keys used
+ * by the rest of the converter.
+ *
+ * Newer GHCNh exports (e.g. international stations like WSSS, plus recent
+ * US exports) renamed several top-level identity columns to uppercase and
+ * renamed `remarks` to `REM`:
+ *
+ *   Old (camelCase)   New (uppercase)
+ *   Station_ID    <-  STATION
+ *   Latitude      <-  LATITUDE
+ *   Longitude     <-  LONGITUDE
+ *   Elevation     <-  ELEVATION
+ *   remarks       <-  REM           (plus REM_* companion fields)
+ *
+ * Without this normalization the converter writes "+99999" / "+999999" /
+ * "+9999" / "999999"/"99999" sentinels for lat/lon/elevation/USAF on any
+ * file using the newer schema. AERMET then rejects the surface station
+ * because its header has no coordinates -- often presenting as "unable to
+ * read wind data" or similar downstream.
+ *
+ * Only copies into the canonical key when the canonical is empty, so older
+ * files that already use camelCase keys (e.g. existing KSYR samples) are
+ * left untouched.
+ */
+function normalizeIdentityAliases(record) {
+    const coalesce = (canonicalKey, aliasKey) => {
+        if (record[canonicalKey] && record[canonicalKey] !== '') return;
+        const v = record[aliasKey];
+        if (v && v !== '') record[canonicalKey] = v;
+    };
+
+    coalesce('Station_ID', 'STATION');
+    coalesce('Latitude',   'LATITUDE');
+    coalesce('Longitude',  'LONGITUDE');
+    coalesce('Elevation',  'ELEVATION');
+
+    // remarks + companion fields. Only `remarks` is read by the converter
+    // today; the companions are aliased anyway for parity with the sky-cover
+    // normalization pattern and to future-proof callers.
+    const remarksSuffixes = [
+        '',
+        '_Measurement_Code',
+        '_Quality_Code',
+        '_Report_Type',
+        '_Source_Code',
+        '_Source_Station_ID'
+    ];
+    for (const suffix of remarksSuffixes) {
+        coalesce('remarks' + suffix, 'REM' + suffix);
+    }
 }
 
 /**
